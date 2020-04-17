@@ -1,4 +1,4 @@
-// +build !linux !mips
+// +build !linux !mipsle
 
 package phantomtcp
 

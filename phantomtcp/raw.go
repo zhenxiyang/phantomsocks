@@ -1,5 +1,5 @@
 // +build linux
-// +build mips
+// +build mipsle
 
 package phantomtcp
 
