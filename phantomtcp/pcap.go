@@ -1,3 +1,5 @@
+// +build !linux !mips
+
 package phantomtcp
 
 import (
