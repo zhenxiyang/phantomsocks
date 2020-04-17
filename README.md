@@ -21,6 +21,19 @@ phantomsocks
     	Socks5
 ```
 ## Installation
+### pcap version
+```
+go build phantomsocks.go
+```
+static linking 
+```
+go build -ldflags '-extldflags "-static"' phantomsocks.go
+```
+### raw socket version
+raw socket is used by default on Linux/mipsle, you can edit pcap.go & raw.go to use this version on all Linux
+```
+env GOOS=linux GOARCH=mipsle go build phantomsocks.go
+```
 ### cross & static compile on Ubuntu 18.04
 Install dependencies
 ```
