@@ -111,7 +111,7 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 		Seq:        connInfo.TCP.Seq + 1,
 		Ack:        0,
 		DataOffset: 5,
-		ACK:        false,
+		ACK:        true,
 		PSH:        true,
 		Window:     connInfo.TCP.Window,
 	}
@@ -123,7 +123,6 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 	}
 
 	if config.Option&OPT_WACK != 0 {
-		tcpLayer.ACK = true
 		tcpLayer.Ack += uint32(tcpLayer.Window)
 	}
 
