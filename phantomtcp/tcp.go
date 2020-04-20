@@ -181,79 +181,96 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 
 		if length > 0 {
 			rand.Seed(time.Now().UnixNano())
-			var connInfo *ConnectionInfo
-			for i := 0; i < 5; i++ {
+
+			if conf.Option&OPT_SSEG != 0 {
 				ip := addresses[rand.Intn(len(addresses))]
-
-				var laddr *net.TCPAddr
-				sport := rand.Intn(65535-1024) + 1024
-				if conf.Device == "" {
-					laddr = &net.TCPAddr{Port: sport}
-				} else {
-					laddr, err = GetLocalAddr(conf.Device, sport, ip.To4() == nil)
-					if laddr == nil {
-						continue
-					}
-				}
-
 				raddr := &net.TCPAddr{ip, port, ""}
-				conn, connInfo, err = DialConnInfo(laddr, raddr)
-				logPrintln(2, ip, port, err)
+				conn, err = net.DialTCP("tcp", nil, raddr)
 				if err != nil {
-					if IsNormalError(err) {
-						continue
-					}
 					return nil, err
 				}
-
-				break
-			}
-
-			if connInfo == nil {
-				return nil, errors.New("connection does not exist")
-			}
-
-			fakepaylen := 1280
-			if len(b) < fakepaylen {
-				fakepaylen = len(b)
-			}
-			fakepayload := make([]byte, fakepaylen)
-			copy(fakepayload, b[:fakepaylen])
-
-			for i := offset; i < offset+length-3; i++ {
-				if fakepayload[i] != '.' {
-					fakepayload[i] = domainBytes[rand.Intn(len(domainBytes))]
-				}
-			}
-
-			count := 2
-			if conf.Option&OPT_MODE2 == 0 {
-				err = SendFakePacket(connInfo, fakepayload, conf, 1)
+				_, err = conn.Write(b[:1])
+				_, err = conn.Write(b[1:3])
+				_, err = conn.Write(b[3:7])
+				_, err = conn.Write(b[7:])
 				if err != nil {
 					conn.Close()
 					return nil, err
 				}
-				count = 1
-			}
+			} else {
+				var connInfo *ConnectionInfo
+				for i := 0; i < 5; i++ {
+					ip := addresses[rand.Intn(len(addresses))]
 
-			_, err = conn.Write(b[:cut])
-			if err != nil {
-				conn.Close()
-				return nil, err
-			}
+					var laddr *net.TCPAddr
+					sport := rand.Intn(65535-1024) + 1024
+					if conf.Device == "" {
+						laddr = &net.TCPAddr{Port: sport}
+					} else {
+						laddr, err = GetLocalAddr(conf.Device, sport, ip.To4() == nil)
+						if laddr == nil {
+							continue
+						}
+					}
 
-			err = SendFakePacket(connInfo, fakepayload, conf, count)
-			if err != nil {
-				conn.Close()
-				return nil, err
-			}
+					raddr := &net.TCPAddr{ip, port, ""}
+					conn, connInfo, err = DialConnInfo(laddr, raddr)
+					logPrintln(2, ip, port, err)
+					if err != nil {
+						if IsNormalError(err) {
+							continue
+						}
+						return nil, err
+					}
 
-			_, err = conn.Write(b[cut:])
-			if err != nil {
-				conn.Close()
-				return nil, err
-			}
+					break
+				}
 
+				if connInfo == nil {
+					return nil, errors.New("connection does not exist")
+				}
+
+				fakepaylen := 1280
+				if len(b) < fakepaylen {
+					fakepaylen = len(b)
+				}
+				fakepayload := make([]byte, fakepaylen)
+				copy(fakepayload, b[:fakepaylen])
+
+				for i := offset; i < offset+length-3; i++ {
+					if fakepayload[i] != '.' {
+						fakepayload[i] = domainBytes[rand.Intn(len(domainBytes))]
+					}
+				}
+
+				count := 2
+				if conf.Option&OPT_MODE2 == 0 {
+					err = SendFakePacket(connInfo, fakepayload, conf, 1)
+					if err != nil {
+						conn.Close()
+						return nil, err
+					}
+					count = 1
+				}
+
+				_, err = conn.Write(b[:cut])
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
+
+				err = SendFakePacket(connInfo, fakepayload, conf, count)
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
+
+				_, err = conn.Write(b[cut:])
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
+			}
 			return conn, err
 		} else {
 			ip := addresses[rand.Intn(len(addresses))]

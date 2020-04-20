@@ -41,12 +41,15 @@ const (
 	OPT_WMD5  = 0x1 << 2
 	OPT_WACK  = 0x1 << 3
 	OPT_WCSUM = 0x1 << 4
-	OPT_HTTPS = 0x1 << 5
-	OPT_STRIP = 0x1 << 6
-	OPT_NAT64 = 0x1 << 7
-	OPT_IPV4  = 0x1 << 8
-	OPT_IPV6  = 0x1 << 9
-	OPT_MODE2 = 0x1 << 10
+	OPT_WSEQ  = 0x1 << 5
+	OPT_SSEG  = 0x1 << 6
+
+	OPT_HTTPS = 0x1 << 16
+	OPT_STRIP = 0x1 << 17
+	OPT_NAT64 = 0x1 << 18
+	OPT_IPV4  = 0x1 << 19
+	OPT_IPV6  = 0x1 << 20
+	OPT_MODE2 = 0x1 << 21
 )
 
 var MethodMap = map[string]uint32{
@@ -56,12 +59,15 @@ var MethodMap = map[string]uint32{
 	"w-md5":  OPT_WMD5,
 	"w-ack":  OPT_WACK,
 	"w-csum": OPT_WCSUM,
-	"https":  OPT_HTTPS,
-	"strip":  OPT_STRIP,
-	"nat64":  OPT_NAT64,
-	"ipv4":   OPT_IPV4,
-	"ipv6":   OPT_IPV6,
-	"mode2":  OPT_MODE2,
+	"w-seq":  OPT_WSEQ,
+	"s-seg":  OPT_SSEG,
+
+	"https": OPT_HTTPS,
+	"strip": OPT_STRIP,
+	"nat64": OPT_NAT64,
+	"ipv4":  OPT_IPV4,
+	"ipv6":  OPT_IPV6,
+	"mode2": OPT_MODE2,
 }
 
 var Logger *log.Logger

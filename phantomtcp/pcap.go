@@ -109,9 +109,9 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 		SrcPort:    connInfo.TCP.SrcPort,
 		DstPort:    connInfo.TCP.DstPort,
 		Seq:        connInfo.TCP.Seq + 1,
-		Ack:        connInfo.TCP.Ack,
+		Ack:        0,
 		DataOffset: 5,
-		ACK:        true,
+		ACK:        false,
 		PSH:        true,
 		Window:     connInfo.TCP.Window,
 	}
@@ -123,6 +123,7 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 	}
 
 	if config.Option&OPT_WACK != 0 {
+		tcpLayer.ACK = true
 		tcpLayer.Ack += uint32(tcpLayer.Window)
 	}
 
@@ -133,6 +134,14 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 
 	if config.Option&OPT_WCSUM == 0 {
 		options.ComputeChecksums = true
+	}
+
+	if config.Option&OPT_WSEQ != 0 {
+		tcpLayer.Seq -= 1
+		fakepayload := make([]byte, len(payload)+1)
+		fakepayload[0] = 0xFF
+		copy(fakepayload[1:], payload)
+		payload = fakepayload
 	}
 
 	tcpLayer.SetNetworkLayerForChecksum(ipLayer)
