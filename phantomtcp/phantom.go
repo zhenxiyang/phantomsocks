@@ -39,10 +39,11 @@ const (
 	OPT_TTL   = 0x1 << 0
 	OPT_MSS   = 0x1 << 1
 	OPT_WMD5  = 0x1 << 2
-	OPT_WACK  = 0x1 << 3
-	OPT_WCSUM = 0x1 << 4
-	OPT_WSEQ  = 0x1 << 5
-	OPT_SSEG  = 0x1 << 6
+	OPT_NACK  = 0x1 << 3
+	OPT_WACK  = 0x1 << 4
+	OPT_WCSUM = 0x1 << 5
+	OPT_WSEQ  = 0x1 << 6
+	OPT_SSEG  = 0x1 << 7
 
 	OPT_HTTPS = 0x1 << 16
 	OPT_STRIP = 0x1 << 17
@@ -57,6 +58,7 @@ var MethodMap = map[string]uint32{
 	"ttl":    OPT_TTL,
 	"mss":    OPT_MSS,
 	"w-md5":  OPT_WMD5,
+	"n-ack":  OPT_NACK,
 	"w-ack":  OPT_WACK,
 	"w-csum": OPT_WCSUM,
 	"w-seq":  OPT_WSEQ,

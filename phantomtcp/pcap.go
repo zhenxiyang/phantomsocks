@@ -79,11 +79,13 @@ func connectionMonitor(device string) {
 		case *layers.IPv4:
 			srcPort := tcp.SrcPort
 			if ConnSyn4[srcPort] {
+				tcp.Seq++
 				ConnInfo4[srcPort] = &ConnectionInfo{link, ip, *tcp}
 			}
 		case *layers.IPv6:
 			srcPort := tcp.SrcPort
 			if ConnSyn6[srcPort] {
+				tcp.Seq++
 				ConnInfo6[srcPort] = &ConnectionInfo{link, ip, *tcp}
 			}
 		}
@@ -108,8 +110,8 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 	tcpLayer := &layers.TCP{
 		SrcPort:    connInfo.TCP.SrcPort,
 		DstPort:    connInfo.TCP.DstPort,
-		Seq:        connInfo.TCP.Seq + 1,
-		Ack:        0,
+		Seq:        connInfo.TCP.Seq,
+		Ack:        connInfo.TCP.Ack,
 		DataOffset: 5,
 		ACK:        true,
 		PSH:        true,
@@ -122,7 +124,10 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 		}
 	}
 
-	if config.Option&OPT_WACK != 0 {
+	if config.Option&OPT_NACK != 0 {
+		tcpLayer.ACK = false
+		tcpLayer.Ack = 0
+	} else if config.Option&OPT_WACK != 0 {
 		tcpLayer.Ack += uint32(tcpLayer.Window)
 	}
 

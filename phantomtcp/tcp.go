@@ -189,9 +189,9 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				if err != nil {
 					return nil, err
 				}
-				_, err = conn.Write(b[:2])
-				_, err = conn.Write(b[2:8])
-				_, err = conn.Write(b[8:])
+				_, err = conn.Write(b[:6])
+				_, err = conn.Write(b[6:cut])
+				_, err = conn.Write(b[cut:])
 				if err != nil {
 					conn.Close()
 					return nil, err

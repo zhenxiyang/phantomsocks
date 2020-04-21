@@ -26,18 +26,25 @@ var ConnSyn6 [65536]bool
 var ConnInfo4 [65536]*ConnectionInfo
 var ConnInfo6 [65536]*ConnectionInfo
 
-func connectionMonitor(device string) {
+func connectionMonitor(device string, ipv6 bool) {
 	fmt.Printf("Device: %v\n", device)
 
 	var err error
-	localaddr, err := GetLocalAddr(device, 0, false)
+	localaddr, err := GetLocalAddr(device, 0, ipv6)
 	if err != nil {
-		logPrintln(0, err)
+		logPrintln(1, err)
 		return
 	}
 
-	netaddr, _ := net.ResolveIPAddr("ip4", localaddr.IP.String())
-	handle, err := net.ListenIP("ip4:tcp", netaddr)
+	var handle *net.IPConn
+	if ipv6 {
+		netaddr, _ := net.ResolveIPAddr("ip6", localaddr.IP.String())
+		handle, err = net.ListenIP("ip6:tcp", netaddr)
+	} else {
+		netaddr, _ := net.ResolveIPAddr("ip4", localaddr.IP.String())
+		handle, err = net.ListenIP("ip4:tcp", netaddr)
+	}
+
 	if err != nil {
 		fmt.Printf("sockraw open failed: %v", err)
 		return
@@ -60,43 +67,70 @@ func connectionMonitor(device string) {
 			continue
 		}
 		srcPort := tcp.DstPort
-		if ConnSyn4[srcPort] {
-			var ip layers.IPv4
-			ip.Version = 4
-			ip.IHL = 5
-			ip.TOS = 0
-			ip.Length = 0
-			ip.Id = 0
-			ip.Flags = 0
-			ip.FragOffset = 0
-			ip.TTL = 64
-			ip.Protocol = 6
-			ip.Checksum = 0
-			ip.SrcIP = localaddr.IP
-			ip.DstIP = net.ParseIP(addr.String())
-			ip.Options = nil
-			ip.Padding = nil
+		if ipv6 {
+			if ConnSyn4[srcPort] {
+				var ip layers.IPv6
+				ip.Version = 6
+				ip.TrafficClass = 5
+				ip.FlowLabel = 0
+				ip.Length = 0
+				ip.NextHeader = 6
+				ip.HopLimit = 64
+				ip.SrcIP = localaddr.IP
+				ip.DstIP = net.ParseIP(addr.String())
+				ip.HopByHop = nil
 
-			tcp.DstPort = tcp.SrcPort
-			tcp.SrcPort = srcPort
-			ack := tcp.Seq + 1
-			tcp.Seq = tcp.Ack - 1
-			tcp.Ack = ack
+				tcp.DstPort = tcp.SrcPort
+				tcp.SrcPort = srcPort
+				ack := tcp.Seq + 1
+				tcp.Seq = tcp.Ack
+				tcp.Ack = ack
 
-			ConnInfo4[srcPort] = &ConnectionInfo{nil, &ip, tcp}
-			buf = make([]byte, 1500)
+				ConnInfo4[srcPort] = &ConnectionInfo{nil, &ip, tcp}
+				buf = make([]byte, 1500)
+			}
+		} else {
+			if ConnSyn4[srcPort] {
+				var ip layers.IPv4
+				ip.Version = 4
+				ip.IHL = 5
+				ip.TOS = 0
+				ip.Length = 0
+				ip.Id = 0
+				ip.Flags = 0
+				ip.FragOffset = 0
+				ip.TTL = 64
+				ip.Protocol = 6
+				ip.Checksum = 0
+				ip.SrcIP = localaddr.IP
+				ip.DstIP = net.ParseIP(addr.String())
+				ip.Options = nil
+				ip.Padding = nil
+
+				tcp.DstPort = tcp.SrcPort
+				tcp.SrcPort = srcPort
+				ack := tcp.Seq + 1
+				tcp.Seq = tcp.Ack
+				tcp.Ack = ack
+
+				ConnInfo4[srcPort] = &ConnectionInfo{nil, &ip, tcp}
+				buf = make([]byte, 1500)
+			}
 		}
 	}
 }
 
 func ConnectionMonitor(devices []string) {
 	if len(devices) == 1 {
-		connectionMonitor(devices[0])
+		go connectionMonitor(devices[0], true)
+		connectionMonitor(devices[0], false)
 	} else {
 		for i := 1; i < len(devices); i++ {
-			go connectionMonitor(devices[i])
+			go connectionMonitor(devices[i], true)
+			go connectionMonitor(devices[i], false)
 		}
-		connectionMonitor(devices[0])
+		go connectionMonitor(devices[0], true)
+		connectionMonitor(devices[0], false)
 	}
 }
 
@@ -106,7 +140,7 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 	tcpLayer := &layers.TCP{
 		SrcPort:    connInfo.TCP.SrcPort,
 		DstPort:    connInfo.TCP.DstPort,
-		Seq:        connInfo.TCP.Seq + 1,
+		Seq:        connInfo.TCP.Seq,
 		Ack:        connInfo.TCP.Ack,
 		DataOffset: 5,
 		ACK:        true,
@@ -120,8 +154,11 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 		}
 	}
 
-	if config.Option&OPT_WACK != 0 {
-		tcpLayer.Ack = connInfo.TCP.Ack + uint32(tcpLayer.Window)
+	if config.Option&OPT_NACK != 0 {
+		tcpLayer.ACK = false
+		tcpLayer.Ack = 0
+	} else if config.Option&OPT_WACK != 0 {
+		tcpLayer.Ack += uint32(tcpLayer.Window)
 	}
 
 	// And create the packet with the layers
