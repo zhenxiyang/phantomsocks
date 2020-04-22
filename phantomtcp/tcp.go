@@ -58,29 +58,39 @@ func DialConnInfo(laddr, raddr *net.TCPAddr) (*net.TCPConn, *ConnectionInfo, err
 	if ip4 != nil {
 		ConnSyn4[laddr.Port] = true
 		conn, err := net.DialTCP("tcp4", laddr, raddr)
-		time.Sleep(time.Millisecond)
-		ConnSyn4[laddr.Port] = false
 
 		if err != nil {
+			ConnSyn4[laddr.Port] = false
 			ConnInfo4[laddr.Port] = nil
 			return nil, nil, err
 		}
 
+		if ConnInfo4[laddr.Port] == nil {
+			time.Sleep(time.Millisecond * 10)
+		}
+		ConnSyn4[laddr.Port] = false
+
 		connInfo := ConnInfo4[laddr.Port]
+
 		ConnInfo4[laddr.Port] = nil
 		return conn, connInfo, nil
 	} else {
 		ConnSyn6[laddr.Port] = true
 		conn, err := net.DialTCP("tcp6", laddr, raddr)
-		time.Sleep(time.Millisecond)
-		ConnSyn6[laddr.Port] = false
 
 		if err != nil {
+			ConnSyn6[laddr.Port] = false
 			ConnInfo6[laddr.Port] = nil
 			return nil, nil, err
 		}
 
+		if ConnInfo4[laddr.Port] == nil {
+			time.Sleep(time.Millisecond * 10)
+		}
+		ConnSyn6[laddr.Port] = false
+
 		connInfo := ConnInfo6[laddr.Port]
+
 		ConnInfo6[laddr.Port] = nil
 		return conn, connInfo, nil
 	}
@@ -242,14 +252,17 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 					}
 				}
 
-				count := 2
+				count := 1
 				if conf.Option&OPT_MODE2 == 0 {
-					err = SendFakePacket(connInfo, fakepayload, conf, 1)
+					err = SendFakePacket(connInfo, fakepayload, conf, count)
 					if err != nil {
 						conn.Close()
 						return nil, err
 					}
-					count = 1
+				} else {
+					connInfo.TCP.Seq += uint32(cut)
+					fakepayload = fakepayload[cut:]
+					count = 2
 				}
 
 				_, err = conn.Write(b[:cut])
@@ -356,14 +369,17 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 				}
 			}
 
-			count := 2
+			count := 1
 			if conf.Option&OPT_MODE2 == 0 {
 				err = SendFakePacket(connInfo, fakepayload, conf, 1)
 				if err != nil {
 					conn.Close()
 					return nil, err
 				}
-				count = 1
+			} else {
+				connInfo.TCP.Seq += uint32(cut)
+				fakepayload = fakepayload[cut:]
+				count = 2
 			}
 
 			_, err = conn.Write(b[:cut])

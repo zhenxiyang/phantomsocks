@@ -43,11 +43,17 @@ var ConnInfo6 [65536]*ConnectionInfo
 
 var pcapHandle *pcap.Handle
 
-func connectionMonitor(device string) {
+func connectionMonitor(device string, synack bool) {
 	fmt.Printf("Device: %v\n", device)
 
 	snapLen := int32(65535)
-	filter := "(ip6[6]==6 and ip6[53]=2) or (tcp[13]=2)"
+
+	var filter string
+	if synack {
+		filter = "(ip6[6]==6 and ip6[53]&18==18) or (tcp[13]&18==18)"
+	} else {
+		filter = "(ip6[6]==6 and ip6[53]&18==2) or (tcp[13]&18==2)"
+	}
 
 	var err error
 	pcapHandle, err = pcap.OpenLive(device, snapLen, true, pcap.BlockForever)
@@ -75,18 +81,71 @@ func connectionMonitor(device string) {
 		ip := packet.NetworkLayer()
 		tcp := packet.TransportLayer().(*layers.TCP)
 
+		var srcPort layers.TCPPort
+		if synack {
+			srcPort = tcp.DstPort
+		} else {
+			srcPort = tcp.SrcPort
+		}
+
 		switch ip := ip.(type) {
 		case *layers.IPv4:
-			srcPort := tcp.SrcPort
 			if ConnSyn4[srcPort] {
-				tcp.Seq++
-				ConnInfo4[srcPort] = &ConnectionInfo{link, ip, *tcp}
+				if synack {
+					srcIP := ip.DstIP
+					ip.DstIP = ip.SrcIP
+					ip.SrcIP = srcIP
+					ip.TTL = 64
+
+					tcp.DstPort = tcp.SrcPort
+					tcp.SrcPort = srcPort
+					ack := tcp.Seq + 1
+					tcp.Seq = tcp.Ack
+					tcp.Ack = ack
+				} else {
+					tcp.Seq++
+				}
+
+				switch link := link.(type) {
+				case *layers.Ethernet:
+					if synack {
+						srcMAC := link.DstMAC
+						link.DstMAC = link.SrcMAC
+						link.SrcMAC = srcMAC
+					}
+					ConnInfo4[srcPort] = &ConnectionInfo{link, ip, *tcp}
+				default:
+					ConnInfo4[srcPort] = &ConnectionInfo{nil, ip, *tcp}
+				}
 			}
 		case *layers.IPv6:
-			srcPort := tcp.SrcPort
 			if ConnSyn6[srcPort] {
-				tcp.Seq++
-				ConnInfo6[srcPort] = &ConnectionInfo{link, ip, *tcp}
+				if synack {
+					srcIP := ip.DstIP
+					ip.DstIP = ip.SrcIP
+					ip.SrcIP = srcIP
+					ip.HopLimit = 64
+
+					tcp.DstPort = tcp.SrcPort
+					tcp.SrcPort = srcPort
+					ack := tcp.Seq + 1
+					tcp.Seq = tcp.Ack
+					tcp.Ack = ack
+				} else {
+					tcp.Seq++
+				}
+
+				switch link := link.(type) {
+				case *layers.Ethernet:
+					if synack {
+						srcMAC := link.DstMAC
+						link.DstMAC = link.SrcMAC
+						link.SrcMAC = srcMAC
+					}
+					ConnInfo6[srcPort] = &ConnectionInfo{link, ip, *tcp}
+				default:
+					ConnInfo6[srcPort] = &ConnectionInfo{nil, ip, *tcp}
+				}
 			}
 		}
 	}
@@ -94,12 +153,12 @@ func connectionMonitor(device string) {
 
 func ConnectionMonitor(devices []string) {
 	if len(devices) == 1 {
-		connectionMonitor(devices[0])
+		connectionMonitor(devices[0], false)
 	} else {
 		for i := 1; i < len(devices); i++ {
-			go connectionMonitor(devices[i])
+			go connectionMonitor(devices[i], false)
 		}
-		connectionMonitor(devices[0])
+		connectionMonitor(devices[0], false)
 	}
 }
 
@@ -150,8 +209,8 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 
 	tcpLayer.SetNetworkLayerForChecksum(ipLayer)
 
-	switch link := linkLayer.(type) {
-	case *layers.Ethernet:
+	if linkLayer != nil {
+		link := linkLayer.(*layers.Ethernet)
 		switch ip := ipLayer.(type) {
 		case *layers.IPv4:
 			if config.Option&OPT_TTL != 0 {
@@ -176,7 +235,7 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 				return err
 			}
 		}
-	case *layers.LinuxSLL:
+	} else {
 		var sa syscall.Sockaddr
 		var domain int
 
