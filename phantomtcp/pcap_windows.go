@@ -1,14 +1,11 @@
-// +build !linux !mipsle
-// +build !windows
-
 package phantomtcp
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/google/gopacket"
@@ -272,49 +269,7 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 			}
 		}
 	} else {
-		var sa syscall.Sockaddr
-		var domain int
-
-		switch ip := ipLayer.(type) {
-		case *layers.IPv4:
-			if config.Option&OPT_TTL != 0 {
-				ip.TTL = config.TTL
-			}
-			gopacket.SerializeLayers(buffer, options,
-				ip, tcpLayer, gopacket.Payload(payload),
-			)
-			var addr [4]byte
-			copy(addr[:4], ip.DstIP.To4()[:4])
-			sa = &syscall.SockaddrInet4{Addr: addr, Port: 0}
-			domain = syscall.AF_INET
-		case *layers.IPv6:
-			if config.Option&OPT_TTL != 0 {
-				ip.HopLimit = config.TTL
-			}
-			gopacket.SerializeLayers(buffer, options,
-				ip, tcpLayer, gopacket.Payload(payload),
-			)
-			var addr [16]byte
-			copy(addr[:16], ip.DstIP[:16])
-			sa = &syscall.SockaddrInet6{Addr: addr, Port: 0}
-			domain = syscall.AF_INET6
-		}
-
-		raw_fd, err := syscall.Socket(domain, syscall.SOCK_RAW, syscall.IPPROTO_RAW)
-		if err != nil {
-			syscall.Close(raw_fd)
-			return err
-		}
-		outgoingPacket := buffer.Bytes()
-
-		for i := 0; i < count; i++ {
-			err = syscall.Sendto(raw_fd, outgoingPacket, 0, sa)
-			if err != nil {
-				syscall.Close(raw_fd)
-				return err
-			}
-		}
-		syscall.Close(raw_fd)
+		return errors.New("Invalid LinkLayer")
 	}
 
 	return nil

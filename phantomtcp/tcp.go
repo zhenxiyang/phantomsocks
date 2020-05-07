@@ -45,49 +45,55 @@ func IsNormalError(err error) bool {
 	if !ok {
 		return false
 	}
-	if errErrno == syscall.EADDRINUSE ||
-		errErrno == syscall.ECONNREFUSED ||
+	if errErrno == syscall.ECONNREFUSED ||
 		errErrno == syscall.ECONNRESET {
 		return true
 	}
 	return false
 }
 
+func AddConn(synAddr string) {
+	SynLock.Lock()
+	ConnSyn[synAddr]++
+	SynLock.Unlock()
+}
+
+func DelConn(synAddr string) {
+	SynLock.Lock()
+	synCount, _ := ConnSyn[synAddr]
+	synCount--
+	if synCount != 0 {
+		ConnSyn[synAddr] = synCount
+	} else {
+		delete(ConnSyn, synAddr)
+	}
+	SynLock.Unlock()
+}
+
 func DialConnInfo(laddr, raddr *net.TCPAddr) (*net.TCPConn, *ConnectionInfo, error) {
+	AddConn(raddr.String())
+	conn, err := net.DialTCP("tcp", laddr, raddr)
+	if err != nil {
+		DelConn(raddr.String())
+		return nil, nil, err
+	}
+	laddr = conn.LocalAddr().(*net.TCPAddr)
 	ip4 := raddr.IP.To4()
 	if ip4 != nil {
-		ConnSyn4[laddr.Port] = true
-		conn, err := net.DialTCP("tcp4", laddr, raddr)
-
-		if err != nil {
-			ConnSyn4[laddr.Port] = false
-			ConnInfo4[laddr.Port] = nil
-			return nil, nil, err
-		}
-
 		if ConnInfo4[laddr.Port] == nil {
 			time.Sleep(time.Millisecond * 10)
 		}
-		ConnSyn4[laddr.Port] = false
+		DelConn(raddr.String())
 
 		connInfo := ConnInfo4[laddr.Port]
 
 		ConnInfo4[laddr.Port] = nil
 		return conn, connInfo, nil
 	} else {
-		ConnSyn6[laddr.Port] = true
-		conn, err := net.DialTCP("tcp6", laddr, raddr)
-
-		if err != nil {
-			ConnSyn6[laddr.Port] = false
-			ConnInfo6[laddr.Port] = nil
-			return nil, nil, err
-		}
-
 		if ConnInfo4[laddr.Port] == nil {
 			time.Sleep(time.Millisecond * 10)
 		}
-		ConnSyn6[laddr.Port] = false
+		DelConn(raddr.String())
 
 		connInfo := ConnInfo6[laddr.Port]
 
@@ -96,7 +102,11 @@ func DialConnInfo(laddr, raddr *net.TCPAddr) (*net.TCPConn, *ConnectionInfo, err
 	}
 }
 
-func GetLocalAddr(name string, port int, ipv6 bool) (*net.TCPAddr, error) {
+func GetLocalAddr(name string, ipv6 bool) (*net.TCPAddr, error) {
+	if name == "" {
+		return nil, nil
+	}
+
 	inf, err := net.InterfaceByName(name)
 	if err != nil {
 		return nil, err
@@ -105,6 +115,7 @@ func GetLocalAddr(name string, port int, ipv6 bool) (*net.TCPAddr, error) {
 	for _, addr := range addrs {
 		localAddr, ok := addr.(*net.IPNet)
 		if ok {
+			var laddr *net.TCPAddr
 			ip4 := localAddr.IP.To4()
 			if ipv6 {
 				if ip4 != nil || localAddr.IP[0] == 0xfe {
@@ -112,70 +123,18 @@ func GetLocalAddr(name string, port int, ipv6 bool) (*net.TCPAddr, error) {
 				}
 				ip := make([]byte, 16)
 				copy(ip[:16], localAddr.IP)
-				laddr := &net.TCPAddr{IP: ip[:], Port: port}
-				return laddr, nil
+				laddr = &net.TCPAddr{IP: ip[:], Port: 0}
 			} else {
 				if ip4 == nil {
 					continue
 				}
 				ip := make([]byte, 4)
 				copy(ip[:4], ip4)
-				laddr := &net.TCPAddr{IP: ip[:], Port: port}
-				return laddr, nil
+				laddr = &net.TCPAddr{IP: ip[:], Port: 0}
 			}
+
+			return laddr, nil
 		}
-	}
-
-	return nil, nil
-}
-
-const (
-	SO_ORIGINAL_DST      = 80
-	IP6T_SO_ORIGINAL_DST = 80
-)
-
-func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
-	file, err := conn.File()
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	LocalAddr := conn.LocalAddr()
-	LocalTCPAddr, err := net.ResolveTCPAddr(LocalAddr.Network(), LocalAddr.String())
-
-	if LocalTCPAddr.IP.To4() == nil {
-		mtuinfo, err := syscall.GetsockoptIPv6MTUInfo(int(file.Fd()), syscall.IPPROTO_IPV6, IP6T_SO_ORIGINAL_DST)
-		if err != nil {
-			return nil, err
-		}
-
-		raw := mtuinfo.Addr
-		var ip net.IP = raw.Addr[:]
-
-		port := int(raw.Port&0xFF)<<8 | int(raw.Port&0xFF00)>>8
-		TCPAddr := net.TCPAddr{ip, port, ""}
-
-		if TCPAddr.IP.Equal(LocalTCPAddr.IP) {
-			return nil, nil
-		}
-
-		return &TCPAddr, nil
-	} else {
-		raw, err := syscall.GetsockoptIPv6Mreq(int(file.Fd()), syscall.IPPROTO_IP, SO_ORIGINAL_DST)
-		if err != nil {
-			return nil, err
-		}
-
-		var ip net.IP = raw.Multiaddr[4:8]
-		port := int(raw.Multiaddr[2])<<8 | int(raw.Multiaddr[3])
-		TCPAddr := net.TCPAddr{ip, port, ""}
-
-		if TCPAddr.IP.Equal(LocalTCPAddr.IP) {
-			return nil, nil
-		}
-
-		return &TCPAddr, nil
 	}
 
 	return nil, nil
@@ -211,15 +170,9 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				for i := 0; i < 5; i++ {
 					ip := addresses[rand.Intn(len(addresses))]
 
-					var laddr *net.TCPAddr
-					sport := rand.Intn(65535-1024) + 1024
-					if conf.Device == "" {
-						laddr = &net.TCPAddr{Port: sport}
-					} else {
-						laddr, err = GetLocalAddr(conf.Device, sport, ip.To4() == nil)
-						if laddr == nil {
-							continue
-						}
+					laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
+					if err != nil {
+						continue
 					}
 
 					raddr := &net.TCPAddr{ip, port, ""}
@@ -289,7 +242,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 
 			var laddr *net.TCPAddr = nil
 			if conf.Device != "" {
-				laddr, err = GetLocalAddr(conf.Device, 0, ip.To4() == nil)
+				laddr, err = GetLocalAddr(conf.Device, ip.To4() == nil)
 				if err != nil {
 					return nil, err
 				}
@@ -329,20 +282,14 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 			for i := 0; i < 5; i++ {
 				ip := addresses[rand.Intn(len(addresses))]
 
-				var laddr *net.TCPAddr
-				sport := rand.Intn(65535-1024) + 1024
-				if conf.Device == "" {
-					laddr = &net.TCPAddr{Port: sport}
-				} else {
-					laddr, err = GetLocalAddr(conf.Device, sport, ip.To4() == nil)
-					if laddr == nil {
-						continue
-					}
+				laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
+				if err != nil {
+					continue
 				}
 
 				raddr := &net.TCPAddr{ip, port, ""}
 				conn, connInfo, err = DialConnInfo(laddr, raddr)
-
+				logPrintln(2, ip, port, err)
 				if err != nil {
 					if IsNormalError(err) {
 						continue
@@ -430,7 +377,7 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 
 			var laddr *net.TCPAddr = nil
 			if conf.Device != "" {
-				laddr, err = GetLocalAddr(conf.Device, 0, ip.To4() == nil)
+				laddr, err = GetLocalAddr(conf.Device, ip.To4() == nil)
 				if err != nil {
 					return nil, err
 				}

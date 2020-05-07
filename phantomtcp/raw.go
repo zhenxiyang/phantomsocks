@@ -6,6 +6,7 @@ package phantomtcp
 import (
 	"fmt"
 	"net"
+	"sync"
 	"syscall"
 
 	"github.com/google/gopacket"
@@ -21,8 +22,8 @@ type ConnectionInfo struct {
 	TCP  layers.TCP
 }
 
-var ConnSyn4 [65536]bool
-var ConnSyn6 [65536]bool
+var SynLock sync.Mutex
+var ConnSyn map[string]int
 var ConnInfo4 [65536]*ConnectionInfo
 var ConnInfo6 [65536]*ConnectionInfo
 
@@ -30,7 +31,7 @@ func connectionMonitor(device string, ipv6 bool) {
 	fmt.Printf("Device: %v\n", device)
 
 	var err error
-	localaddr, err := GetLocalAddr(device, 0, ipv6)
+	localaddr, err := GetLocalAddr(device, ipv6)
 	if err != nil {
 		logPrintln(1, err)
 		return
@@ -67,8 +68,11 @@ func connectionMonitor(device string, ipv6 bool) {
 			continue
 		}
 		srcPort := tcp.DstPort
-		if ipv6 {
-			if ConnSyn4[srcPort] {
+		synAddr := addr.String()
+		SynLock.Lock()
+		_, ok := ConnSyn[synAddr]
+		if ok {
+			if ipv6 {
 				var ip layers.IPv6
 				ip.Version = 6
 				ip.TrafficClass = 5
@@ -88,9 +92,7 @@ func connectionMonitor(device string, ipv6 bool) {
 
 				ConnInfo4[srcPort] = &ConnectionInfo{nil, &ip, tcp}
 				buf = make([]byte, 1500)
-			}
-		} else {
-			if ConnSyn4[srcPort] {
+			} else {
 				var ip layers.IPv4
 				ip.Version = 4
 				ip.IHL = 5
@@ -117,6 +119,7 @@ func connectionMonitor(device string, ipv6 bool) {
 				buf = make([]byte, 1500)
 			}
 		}
+		SynLock.Unlock()
 	}
 }
 
