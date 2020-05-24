@@ -299,6 +299,10 @@ func Proxy(client net.Conn) {
 		var host string
 		var port int
 		addr, err := GetOriginalDST(client.(*net.TCPConn))
+		if err != nil {
+			logPrintln(1, err)
+			return
+		}
 
 		ip := []byte(addr.IP)
 		iptype := binary.BigEndian.Uint16(ip[:2])
@@ -319,7 +323,9 @@ func Proxy(client net.Conn) {
 			if addr.String() == client.LocalAddr().String() {
 				return
 			}
+			host = addr.IP.String()
 		}
+		port = addr.Port
 
 		conf, ok := ConfigLookup(host)
 
@@ -373,13 +379,16 @@ func Proxy(client net.Conn) {
 				}
 			}
 		} else {
-			logPrintln(1, addr.String())
+			return
+			/*
+				logPrintln(1, addr.String())
 
-			conn, err = net.Dial("tcp", addr.String())
-			if err != nil {
-				logPrintln(1, err)
-				return
-			}
+				conn, err = net.Dial("tcp", addr.String())
+				if err != nil {
+					logPrintln(1, err)
+					return
+				}
+			*/
 		}
 	}
 

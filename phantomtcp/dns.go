@@ -321,7 +321,7 @@ func BuildLie(request []byte, id int, qtype int) []byte {
 	if qtype == 1 {
 		answer := []byte{0xC0, 0x0C, 0x00, 1,
 			0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x04,
-			7, 0}
+			6, 0}
 		copy(response[length:], answer)
 		length += 14
 		binary.BigEndian.PutUint16(response[length:], uint16(id))

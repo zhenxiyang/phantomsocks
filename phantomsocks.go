@@ -88,7 +88,7 @@ func PACServer(listenAddr string, proxyAddr string) {
 	}
 }
 
-func DNSServer(listenAddr, DNS string) error {
+func DNSServer(listenAddr, defaultDNS string) error {
 	addr, err := net.ResolveUDPAddr("udp", listenAddr)
 	if err != nil {
 		return err
@@ -99,7 +99,7 @@ func DNSServer(listenAddr, DNS string) error {
 	}
 	defer conn.Close()
 
-	fmt.Println("DNS:", DNS, listenAddr)
+	fmt.Println("DNS:", defaultDNS, listenAddr)
 	data := make([]byte, 512)
 	for {
 		n, clientAddr, err := conn.ReadFromUDP(data)
@@ -114,30 +114,48 @@ func DNSServer(listenAddr, DNS string) error {
 			conn.WriteToUDP(response, clientAddr)
 			continue
 		}
-		if ptcp.LogLevel > 1 {
-			fmt.Println("DNS:", clientAddr, qname)
-		}
-		dnsConn, err := net.Dial("udp", DNS)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		_, err = dnsConn.Write(data[:n])
-		if err != nil {
-			log.Println(err)
-			dnsConn.Close()
-			continue
-		}
-		go func(clientAddr *net.UDPAddr, dnsConn net.Conn) {
-			defer dnsConn.Close()
-			recv := make([]byte, 1480)
-			n, err := dnsConn.Read(recv)
+
+		if defaultDNS != "" {
+			if ptcp.LogLevel > 1 {
+				fmt.Println("DNS:", clientAddr, qname)
+			}
+			dnsConn, err := net.Dial("udp", defaultDNS)
 			if err != nil {
 				log.Println(err)
-				return
+				continue
 			}
-			conn.WriteToUDP(recv[:n], clientAddr)
-		}(clientAddr, dnsConn)
+			_, err = dnsConn.Write(data[:n])
+			if err != nil {
+				log.Println(err)
+				dnsConn.Close()
+				continue
+			}
+			go func(clientAddr *net.UDPAddr, dnsConn net.Conn) {
+				defer dnsConn.Close()
+				recv := make([]byte, 1480)
+				n, err := dnsConn.Read(recv)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				conn.WriteToUDP(recv[:n], clientAddr)
+			}(clientAddr, dnsConn)
+		} else {
+			if ptcp.LogLevel > 1 {
+				fmt.Println("DoT:", clientAddr, qname)
+			}
+
+			response := make([]byte, n)
+			copy(response, data[:n])
+			go func(clientAddr *net.UDPAddr, response []byte) {
+				recv, err := ptcp.TLSlookup(response, ptcp.DNS)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				conn.WriteToUDP(recv[:n], clientAddr)
+			}(clientAddr, response)
+		}
 	}
 	return nil
 }
@@ -147,6 +165,7 @@ var hostsFile = flag.String("hosts", "", "Hosts")
 var socksListenAddr = flag.String("socks", "", "Socks5")
 var pacListenAddr = flag.String("pac", "", "PACServer")
 var sniListenAddr = flag.String("sni", "", "SNIProxy")
+var proxyListenAddr = flag.String("proxy", "", "Proxy")
 var dnsListenAddr = flag.String("dns", "", "DNS")
 var device = flag.String("device", "", "Device")
 var logLevel = flag.Int("log", 0, "LogLevel")
@@ -194,8 +213,12 @@ func main() {
 		go SNIProxy(*sniListenAddr)
 	}
 
+	if *proxyListenAddr != "" {
+		go Proxy(*proxyListenAddr)
+	}
+
 	if *dnsListenAddr != "" {
-		go DNSServer(":53", *dnsListenAddr)
+		go DNSServer(*dnsListenAddr, "")
 	}
 
 	devices := strings.Split(*device, ",")

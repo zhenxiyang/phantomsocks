@@ -2,7 +2,38 @@ package phantomtcp
 
 import (
 	"net"
+	"time"
 )
+
+func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (*net.TCPConn, *ConnectionInfo, error) {
+	AddConn(raddr.String())
+	conn, err := net.DialTCP("tcp", laddr, raddr)
+	if err != nil {
+		DelConn(raddr.String())
+		return nil, nil, err
+	}
+
+	laddr = conn.LocalAddr().(*net.TCPAddr)
+	ip4 := raddr.IP.To4()
+	if ip4 != nil {
+		select {
+		case connInfo := <-ConnInfo4[laddr.Port]:
+			DelConn(raddr.String())
+			return conn, connInfo, nil
+		case <-time.After(time.Second):
+		}
+	} else {
+		select {
+		case connInfo := <-ConnInfo6[laddr.Port]:
+			DelConn(raddr.String())
+			return conn, connInfo, nil
+		case <-time.After(time.Second):
+		}
+	}
+
+	DelConn(raddr.String())
+	return conn, nil, nil
+}
 
 func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 	file, err := conn.File()

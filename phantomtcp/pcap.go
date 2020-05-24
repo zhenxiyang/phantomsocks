@@ -9,7 +9,6 @@ import (
 	"net"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -42,8 +41,8 @@ type ConnectionInfo struct {
 
 var SynLock sync.Mutex
 var ConnSyn map[string]int
-var ConnInfo4 [65536]*ConnectionInfo
-var ConnInfo6 [65536]*ConnectionInfo
+var ConnInfo4 [65536]chan *ConnectionInfo
+var ConnInfo6 [65536]chan *ConnectionInfo
 
 var pcapHandle *pcap.Handle
 
@@ -116,6 +115,12 @@ func connectionMonitor(device string, synack bool) {
 					tcp.Seq++
 				}
 
+				ch := ConnInfo4[srcPort]
+				select {
+				case <-ch:
+				default:
+				}
+
 				switch link := link.(type) {
 				case *layers.Ethernet:
 					if synack {
@@ -123,15 +128,10 @@ func connectionMonitor(device string, synack bool) {
 						link.DstMAC = link.SrcMAC
 						link.SrcMAC = srcMAC
 					}
-					ConnInfo4[srcPort] = &ConnectionInfo{link, ip, *tcp}
+					ch <- &ConnectionInfo{link, ip, *tcp}
 				default:
-					ConnInfo4[srcPort] = &ConnectionInfo{nil, ip, *tcp}
+					ch <- &ConnectionInfo{nil, ip, *tcp}
 				}
-
-				go func(port int) {
-					time.Sleep(time.Second)
-					ConnInfo4[srcPort] = nil
-				}(int(srcPort))
 			}
 			SynLock.Unlock()
 		case *layers.IPv6:
@@ -164,6 +164,12 @@ func connectionMonitor(device string, synack bool) {
 					tcp.Seq++
 				}
 
+				ch := ConnInfo6[srcPort]
+				select {
+				case <-ch:
+				default:
+				}
+
 				switch link := link.(type) {
 				case *layers.Ethernet:
 					if synack {
@@ -171,15 +177,10 @@ func connectionMonitor(device string, synack bool) {
 						link.DstMAC = link.SrcMAC
 						link.SrcMAC = srcMAC
 					}
-					ConnInfo6[srcPort] = &ConnectionInfo{link, ip, *tcp}
+					ch <- &ConnectionInfo{link, ip, *tcp}
 				default:
-					ConnInfo6[srcPort] = &ConnectionInfo{nil, ip, *tcp}
+					ch <- &ConnectionInfo{nil, ip, *tcp}
 				}
-
-				go func(port int) {
-					time.Sleep(time.Second)
-					ConnInfo6[srcPort] = nil
-				}(int(srcPort))
 			}
 			SynLock.Unlock()
 		}
@@ -188,6 +189,11 @@ func connectionMonitor(device string, synack bool) {
 
 func ConnectionMonitor(devices []string) {
 	ConnSyn = make(map[string]int, 65536)
+	for i := 0; i < 65536; i++ {
+		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
+		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
+	}
+
 	if len(devices) == 1 {
 		connectionMonitor(devices[0], false)
 	} else {

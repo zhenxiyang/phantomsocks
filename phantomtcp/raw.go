@@ -24,8 +24,8 @@ type ConnectionInfo struct {
 
 var SynLock sync.Mutex
 var ConnSyn map[string]int
-var ConnInfo4 [65536]*ConnectionInfo
-var ConnInfo6 [65536]*ConnectionInfo
+var ConnInfo4 [65536]chan *ConnectionInfo
+var ConnInfo6 [65536]chan *ConnectionInfo
 
 func connectionMonitor(device string, ipv6 bool) {
 	fmt.Printf("Device: %v\n", device)
@@ -90,7 +90,13 @@ func connectionMonitor(device string, ipv6 bool) {
 				tcp.Seq = tcp.Ack
 				tcp.Ack = ack
 
-				ConnInfo4[srcPort] = &ConnectionInfo{nil, &ip, tcp}
+				ch := ConnInfo6[srcPort]
+				select {
+				case <-ch:
+				default:
+				}
+
+				ConnInfo4[srcPort] <- &ConnectionInfo{nil, &ip, tcp}
 				buf = make([]byte, 1500)
 			} else {
 				var ip layers.IPv4
@@ -115,7 +121,12 @@ func connectionMonitor(device string, ipv6 bool) {
 				tcp.Seq = tcp.Ack
 				tcp.Ack = ack
 
-				ConnInfo4[srcPort] = &ConnectionInfo{nil, &ip, tcp}
+				ch := ConnInfo4[srcPort]
+				select {
+				case <-ch:
+				default:
+				}
+				ch <- &ConnectionInfo{nil, &ip, tcp}
 				buf = make([]byte, 1500)
 			}
 		}
@@ -124,6 +135,12 @@ func connectionMonitor(device string, ipv6 bool) {
 }
 
 func ConnectionMonitor(devices []string) {
+	ConnSyn = make(map[string]int, 65536)
+	for i := 0; i < 65536; i++ {
+		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
+		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
+	}
+
 	if len(devices) == 1 {
 		go connectionMonitor(devices[0], true)
 		connectionMonitor(devices[0], false)
