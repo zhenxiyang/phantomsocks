@@ -170,11 +170,11 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 
 					laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
 					if err != nil {
-						continue
+						return nil, errors.New("invalid device")
 					}
 
 					raddr := &net.TCPAddr{ip, port, ""}
-					if (conf.Option&OPT_TFO | OPT_HTFO) != 0 {
+					if (conf.Option & (OPT_TFO|OPT_HTFO)) != 0 {
 						if (conf.Option & OPT_TFO) != 0 {
 							conn, connInfo, err = DialConnInfo(laddr, raddr, conf, b)
 						} else {
@@ -196,7 +196,9 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				}
 
 				if connInfo == nil {
-					conn.Close()
+					if conn != nil {
+						conn.Close()
+					}
 					return nil, errors.New("connection does not exist")
 				}
 

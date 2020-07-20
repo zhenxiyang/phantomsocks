@@ -156,9 +156,6 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	length := 0
 	recvlen := 0
 	for {
-		if recvlen >= 1024 {
-			return nil, nil
-		}
 		n, err := conn.Read(data[recvlen:])
 		if err != nil {
 			return nil, err
@@ -212,10 +209,38 @@ func GetQName(buf []byte) (string, int, int) {
 	return qname, qtype, end
 }
 
-func getAnswers(answers []byte, count int) []net.IP {
-	ips := make([]net.IP, 0)
-	offset := 0
+func GetName(buf []byte, offset int) (string, int) {
+	name := ""
+	for {
+		length := int(buf[offset])
+		offset++
+		if length == 0 {
+			break
+		}
+		if name != "" {
+			name += "."
+		}
+		if length < 63 {
+			name += string(buf[offset:offset+length])
+			offset += int(length)
+			if offset+2 > len(buf) {
+				return "", offset
+			}
+		} else {
+			_offset := int(buf[offset])
+			_name, _ := GetName(buf, _offset)
+			name += _name
+			return name, offset+1
+		}
+	}
+	return name, offset
+}
 
+
+func getAnswers(answers []byte, offset int, count int, qtype uint16) []net.IP {
+	ips := make([]net.IP, 0)
+
+	cname := ""
 	for i := 0; i < count; i++ {
 		for {
 			if offset >= len(answers) {
@@ -262,9 +287,16 @@ func getAnswers(answers []byte, count int) []net.IP {
 			copy(data[:], answers[offset:offset+16])
 			ip := net.IP(answers[offset : offset+16])
 			ips = append(ips, ip)
+		} else if AType == 5 {
+			cname, _ = GetName(answers, offset)
+			logPrintln(4, "CNAME:", cname)
 		}
 
 		offset += int(DataLength)
+	}
+
+	if len(ips) == 0 && cname != "" {
+		_, ips = NSLookup(cname, qtype)
 	}
 
 	return ips
@@ -394,6 +426,7 @@ func NSLookup(name string, qtype uint16) (int, []net.IP) {
 		offset += off
 		ans, ok = DNSCache[name[offset:]]
 		if ok {
+			logPrintln(3, "cached:", name, qtype, ans.Addresses)
 			return ans.Index, ans.Addresses
 		}
 		offset++
@@ -406,10 +439,12 @@ func NSLookup(name string, qtype uint16) (int, []net.IP) {
 		return 0, nil
 	}
 	count := int(binary.BigEndian.Uint16(response[6:8]))
-	ips := getAnswers(response[len(request):], count)
+	ips := getAnswers(response, len(request), count, qtype)
+        logPrintln(3, name, qtype, count, ips)
 
 	index := len(Nose)
 	DNSCache[name] = Answer{index, ips}
+        Nose = append(Nose, name)
 
 	return index, ips
 }

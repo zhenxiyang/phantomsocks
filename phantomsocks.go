@@ -107,9 +107,14 @@ func DNSServer(listenAddr, defaultDNS string) error {
 			continue
 		}
 		qname, qtype, _ := ptcp.GetQName(data[:n])
-		_, ok := ptcp.ConfigLookup(qname)
+		conf, ok := ptcp.ConfigLookup(qname)
 		if ok {
-			index, _ := ptcp.NSLookup(qname, 1)
+			index := 0
+			if conf.Option&ptcp.OPT_IPV6 != 0 {
+				index, _ = ptcp.NSLookup(qname, 28)
+			} else {
+				index, _ = ptcp.NSLookup(qname, 1)
+			}
 			response := ptcp.BuildLie(data[:n], index, qtype)
 			conn.WriteToUDP(response, clientAddr)
 			continue
