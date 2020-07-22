@@ -327,7 +327,7 @@ func Proxy(client net.Conn) {
 		}
 		port = addr.Port
 
-		conf, ok := ConfigLookup(host)
+		config, ok := ConfigLookup(host)
 
 		if ok {
 			var b [1500]byte
@@ -337,10 +337,8 @@ func Proxy(client net.Conn) {
 				return
 			}
 
-			logPrintln(1, "Proxy:", host, port, conf)
-
 			var ips []net.IP
-			if conf.Option&OPT_IPV6 != 0 {
+			if config.Option&OPT_IPV6 != 0 {
 				_, ips = NSLookup(host, 28)
 			} else {
 				_, ips = NSLookup(host, 1)
@@ -351,16 +349,27 @@ func Proxy(client net.Conn) {
 			}
 
 			if b[0] == 0x16 {
-				conn, err = Dial(ips, port, b[:n], &conf)
+				offset, length := GetSNI(b[:n])
+				var conf *Config = nil
+				if length > 0 {
+					host = string(b[offset : offset+length])
+					config, ok = ConfigLookup(host)
+					conf = &config
+				}
+
+				logPrintln(1, "Proxy:", host, port, config)
+
+				conn, err = Dial(ips, port, b[:n], conf)
 				if err != nil {
 					logPrintln(1, host, err)
 					return
 				}
 			} else {
-				if conf.Option&OPT_HTTPS != 0 {
+				logPrintln(1, "Proxy:", host, port, config)
+				if config.Option&OPT_HTTPS != 0 {
 					HttpMove(client, "https", b[:n])
 					return
-				} else if conf.Option&OPT_STRIP != 0 {
+				} else if config.Option&OPT_STRIP != 0 {
 					ip := ips[rand.Intn(len(ips))]
 					conn, err = DialStrip(ip.String(), "")
 					if err != nil {
@@ -369,7 +378,7 @@ func Proxy(client net.Conn) {
 					}
 					_, err = conn.Write(b[:n])
 				} else {
-					conn, err = HTTP(client, ips, port, b[:n], &conf)
+					conn, err = HTTP(client, ips, port, b[:n], &config)
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -380,15 +389,6 @@ func Proxy(client net.Conn) {
 			}
 		} else {
 			return
-			/*
-				logPrintln(1, addr.String())
-
-				conn, err = net.Dial("tcp", addr.String())
-				if err != nil {
-					logPrintln(1, err)
-					return
-				}
-			*/
 		}
 	}
 
