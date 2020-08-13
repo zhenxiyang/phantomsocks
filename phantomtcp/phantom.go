@@ -56,6 +56,8 @@ const (
 	OPT_MODE2 = 0x1 << 21
 )
 
+const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ
+
 var MethodMap = map[string]uint32{
 	"none":       OPT_NONE,
 	"ttl":        OPT_TTL,

@@ -156,26 +156,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		}
 		cut := (min_dot + max_dot) / 2
 
-		if conf.Option&OPT_SSEG != 0 {
-			ip := addresses[rand.Intn(len(addresses))]
-			raddr := &net.TCPAddr{ip, port, ""}
-			if (conf.Option & OPT_HTFO) != 0 {
-				conn, _, err = DialConnInfo(nil, raddr, conf, nil)
-			} else {
-				conn, err = net.DialTCP("tcp", nil, raddr)
-			}
-			if err != nil {
-				return nil, err
-			}
-
-			_, err = conn.Write(b[:6])
-			_, err = conn.Write(b[6:cut])
-			_, err = conn.Write(b[cut:])
-			if err != nil {
-				conn.Close()
-				return nil, err
-			}
-		} else {
+		if conf.Option&OPT_FAKE != 0 {
 			var connInfo *ConnectionInfo
 			for i := 0; i < 5; i++ {
 				ip := addresses[rand.Intn(len(addresses))]
@@ -230,19 +211,31 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 						count = 2
 					}
 				} else {
-					if conf.Option&OPT_MODE2 == 0 {
+					if conf.Option&OPT_SSEG != 0 {
+						_, err = conn.Write(b[:4])
+						if err != nil {
+							conn.Close()
+							return nil, err
+						}
+					}
+
+					if conf.Option&OPT_MODE2 != 0 {
+						connInfo.TCP.Seq += uint32(cut)
+						fakepayload = fakepayload[cut:]
+						count = 2
+					} else {
 						err = SendFakePacket(connInfo, fakepayload, conf, count)
 						if err != nil {
 							conn.Close()
 							return nil, err
 						}
-					} else {
-						connInfo.TCP.Seq += uint32(cut)
-						fakepayload = fakepayload[cut:]
-						count = 2
 					}
 
-					_, err = conn.Write(b[:cut])
+					if conf.Option&OPT_SSEG != 0 {
+						_, err = conn.Write(b[4:cut])
+					} else {
+						_, err = conn.Write(b[:cut])
+					}
 					if err != nil {
 						conn.Close()
 						return nil, err
@@ -260,6 +253,26 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 					conn.Close()
 					return nil, err
 				}
+			}
+		} else {
+			ip := addresses[rand.Intn(len(addresses))]
+			laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
+			raddr := &net.TCPAddr{ip, port, ""}
+			if (conf.Option & OPT_HTFO) != 0 {
+				conn, _, err = DialConnInfo(laddr, raddr, conf, nil)
+			} else {
+				conn, err = net.DialTCP("tcp", laddr, raddr)
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = conn.Write(b[:4])
+			_, err = conn.Write(b[4:cut])
+			_, err = conn.Write(b[cut:])
+			if err != nil {
+				conn.Close()
+				return nil, err
 			}
 		}
 		return conn, err
