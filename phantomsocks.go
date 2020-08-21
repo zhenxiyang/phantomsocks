@@ -223,7 +223,13 @@ func main() {
 	}
 
 	if *dnsListenAddr != "" {
-		go DNSServer(*dnsListenAddr, "")
+		dnsprams := strings.Split(*dnsListenAddr, "#")
+		dnsServer := dnsprams[0]
+		defaultDNS := ""
+		if len(dnsprams) > 1 {
+			defaultDNS = dnsprams[1]
+		}
+		go DNSServer(dnsServer, defaultDNS)
 	}
 
 	devices := strings.Split(*device, ",")
