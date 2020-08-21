@@ -39,7 +39,7 @@ type ConnectionInfo struct {
 	TCP  layers.TCP
 }
 
-var SynLock sync.Mutex
+var SynLock sync.RWMutex
 var ConnSyn map[string]int
 var ConnInfo4 [65536]chan *ConnectionInfo
 var ConnInfo6 [65536]chan *ConnectionInfo
@@ -97,7 +97,7 @@ func connectionMonitor(device string, synack bool) {
 				addr := net.TCPAddr{IP: ip.DstIP, Port: int(tcp.DstPort)}
 				synAddr = addr.String()
 			}
-			SynLock.Lock()
+			SynLock.RLock()
 			_, ok := ConnSyn[synAddr]
 			if ok {
 				if synack {
@@ -133,7 +133,7 @@ func connectionMonitor(device string, synack bool) {
 					ch <- &ConnectionInfo{nil, ip, *tcp}
 				}
 			}
-			SynLock.Unlock()
+			SynLock.RUnlock()
 		case *layers.IPv6:
 			var srcPort layers.TCPPort
 			var synAddr string
@@ -146,7 +146,7 @@ func connectionMonitor(device string, synack bool) {
 				addr := net.TCPAddr{IP: ip.DstIP, Port: int(tcp.DstPort)}
 				synAddr = addr.String()
 			}
-			SynLock.Lock()
+			SynLock.RLock()
 			_, ok := ConnSyn[synAddr]
 			if ok {
 				if synack {
@@ -182,12 +182,12 @@ func connectionMonitor(device string, synack bool) {
 					ch <- &ConnectionInfo{nil, ip, *tcp}
 				}
 			}
-			SynLock.Unlock()
+			SynLock.RUnlock()
 		}
 	}
 }
 
-func ConnectionMonitor(devices []string) {
+func ConnectionMonitor(devices []string, synack bool) {
 	ConnSyn = make(map[string]int, 65536)
 	for i := 0; i < 65536; i++ {
 		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
@@ -195,12 +195,12 @@ func ConnectionMonitor(devices []string) {
 	}
 
 	if len(devices) == 1 {
-		connectionMonitor(devices[0], false)
+		connectionMonitor(devices[0], synack)
 	} else {
 		for i := 1; i < len(devices); i++ {
-			go connectionMonitor(devices[i], false)
+			go connectionMonitor(devices[i], synack)
 		}
-		connectionMonitor(devices[0], false)
+		connectionMonitor(devices[0], synack)
 	}
 }
 
@@ -222,6 +222,10 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 	if config.Option&OPT_WMD5 != 0 {
 		tcpLayer.Options = []layers.TCPOption{
 			layers.TCPOption{19, 18, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+		}
+	} else if config.Option&OPT_WTIME != 0 {
+		tcpLayer.Options = []layers.TCPOption{
+			layers.TCPOption{8, 10, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
 		}
 	}
 

@@ -134,7 +134,7 @@ func connectionMonitor(device string, ipv6 bool) {
 	}
 }
 
-func ConnectionMonitor(devices []string) {
+func ConnectionMonitor(devices []string, synack bool) {
 	ConnSyn = make(map[string]int, 65536)
 	for i := 0; i < 65536; i++ {
 		ConnInfo4[i] = make(chan *ConnectionInfo, 1)

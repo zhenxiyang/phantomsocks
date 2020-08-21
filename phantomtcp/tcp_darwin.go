@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (*net.TCPConn, *ConnectionInfo, error) {
+func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.Conn, *ConnectionInfo, error) {
 	AddConn(raddr.String())
 	conn, err := net.DialTCP("tcp", laddr, raddr)
 	if err != nil {

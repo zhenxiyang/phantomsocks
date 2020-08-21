@@ -9,10 +9,9 @@ import (
 func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.Conn, *ConnectionInfo, error) {
 	var conn net.Conn
 	var err error
+
+	AddConn(raddr.String())
 	if (conf.Option & (OPT_MSS | OPT_TFO | OPT_HTFO | OPT_KEEPALIVE)) != 0 {
-		if (conf.Option & OPT_SSEG) == 0 {
-			AddConn(raddr.String())
-		}
 		d := net.Dialer{LocalAddr: laddr,
 			Control: func(network, address string, c syscall.RawConn) error {
 				err := c.Control(func(fd uintptr) {
@@ -33,11 +32,7 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 		if err == nil && payload != nil {
 			_, err = conn.Write(payload)
 		}
-		if (conf.Option & OPT_SSEG) != 0 {
-			return conn, nil, err
-		}
 	} else {
-		AddConn(raddr.String())
 		conn, err = net.DialTCP("tcp", laddr, raddr)
 	}
 
@@ -92,7 +87,7 @@ func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 		var ip net.IP = raw.Addr[:]
 
 		port := int(raw.Port&0xFF)<<8 | int(raw.Port&0xFF00)>>8
-		TCPAddr := net.TCPAddr{ip, port, ""}
+		TCPAddr := net.TCPAddr{IP: ip, Port: port, Zone: ""}
 
 		if TCPAddr.IP.Equal(LocalTCPAddr.IP) {
 			return nil, nil
@@ -107,7 +102,7 @@ func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 
 		var ip net.IP = raw.Multiaddr[4:8]
 		port := int(raw.Multiaddr[2])<<8 | int(raw.Multiaddr[3])
-		TCPAddr := net.TCPAddr{ip, port, ""}
+		TCPAddr := net.TCPAddr{IP: ip, Port: port, Zone: ""}
 
 		if TCPAddr.IP.Equal(LocalTCPAddr.IP) {
 			return nil, nil
@@ -115,6 +110,4 @@ func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 
 		return &TCPAddr, nil
 	}
-
-	return nil, nil
 }

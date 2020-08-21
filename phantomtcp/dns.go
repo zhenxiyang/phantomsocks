@@ -45,8 +45,6 @@ func TCPlookup(request []byte, address string) ([]byte, error) {
 			return data[2:recvlen], nil
 		}
 	}
-
-	return nil, nil
 }
 
 func TCPlookupDNS64(request []byte, address string, offset int, prefix []byte) ([]byte, error) {
@@ -168,8 +166,6 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 			return data[2:recvlen], nil
 		}
 	}
-
-	return nil, nil
 }
 
 func GetQName(buf []byte) (string, int, int) {

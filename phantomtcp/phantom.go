@@ -35,18 +35,20 @@ var LogLevel = 0
 var Forward bool = false
 
 const (
-	OPT_NONE      = 0x0
-	OPT_TTL       = 0x1 << 0
-	OPT_MSS       = 0x1 << 1
-	OPT_WMD5      = 0x1 << 2
-	OPT_NACK      = 0x1 << 3
-	OPT_WACK      = 0x1 << 4
-	OPT_WCSUM     = 0x1 << 5
-	OPT_WSEQ      = 0x1 << 6
-	OPT_SSEG      = 0x1 << 7
-	OPT_TFO       = 0x1 << 8
-	OPT_HTFO      = 0x1 << 9
-	OPT_KEEPALIVE = 0x1 << 10
+	OPT_NONE  = 0x0
+	OPT_TTL   = 0x1 << 0
+	OPT_MSS   = 0x1 << 1
+	OPT_WMD5  = 0x1 << 2
+	OPT_NACK  = 0x1 << 3
+	OPT_WACK  = 0x1 << 4
+	OPT_WCSUM = 0x1 << 5
+	OPT_WSEQ  = 0x1 << 6
+	OPT_WTIME = 0x1 << 7
+
+	OPT_SSEG      = 0x1 << 8
+	OPT_TFO       = 0x1 << 9
+	OPT_HTFO      = 0x1 << 10
+	OPT_KEEPALIVE = 0x1 << 11
 
 	OPT_HTTPS = 0x1 << 16
 	OPT_STRIP = 0x1 << 17
@@ -56,17 +58,19 @@ const (
 	OPT_MODE2 = 0x1 << 21
 )
 
-const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ
+const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME
 
 var MethodMap = map[string]uint32{
-	"none":       OPT_NONE,
-	"ttl":        OPT_TTL,
-	"mss":        OPT_MSS,
-	"w-md5":      OPT_WMD5,
-	"n-ack":      OPT_NACK,
-	"w-ack":      OPT_WACK,
-	"w-csum":     OPT_WCSUM,
-	"w-seq":      OPT_WSEQ,
+	"none":   OPT_NONE,
+	"ttl":    OPT_TTL,
+	"mss":    OPT_MSS,
+	"w-md5":  OPT_WMD5,
+	"n-ack":  OPT_NACK,
+	"w-ack":  OPT_WACK,
+	"w-csum": OPT_WCSUM,
+	"w-seq":  OPT_WSEQ,
+	"w-time": OPT_WTIME,
+
 	"s-seg":      OPT_SSEG,
 	"tfo":        OPT_TFO,
 	"half-tfo":   OPT_HTFO,

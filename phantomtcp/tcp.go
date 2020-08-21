@@ -114,7 +114,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 
 	if conf == nil || b == nil {
 		ip := addresses[rand.Intn(len(addresses))]
-		raddr := &net.TCPAddr{ip, port, ""}
+		raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
 		conn, err = net.DialTCP("tcp", nil, raddr)
 		if err != nil {
 			return nil, err
@@ -166,7 +166,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 					return nil, errors.New("invalid device")
 				}
 
-				raddr := &net.TCPAddr{ip, port, ""}
+				raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
 				if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
 					if (conf.Option & OPT_TFO) != 0 {
 						conn, connInfo, err = DialConnInfo(laddr, raddr, conf, b)
@@ -257,7 +257,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		} else {
 			ip := addresses[rand.Intn(len(addresses))]
 			laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
-			raddr := &net.TCPAddr{ip, port, ""}
+			raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
 			if (conf.Option & OPT_HTFO) != 0 {
 				conn, _, err = DialConnInfo(laddr, raddr, conf, nil)
 			} else {
@@ -287,7 +287,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 			}
 		}
 
-		raddr := &net.TCPAddr{ip, port, ""}
+		raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
 		conn, err = net.DialTCP("tcp", laddr, raddr)
 		if err != nil {
 			return nil, err
@@ -298,8 +298,6 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		}
 		return conn, err
 	}
-
-	return conn, err
 }
 
 func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error) {
@@ -347,7 +345,7 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 					continue
 				}
 
-				raddr := &net.TCPAddr{ip, port, ""}
+				raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
 				conn, connInfo, err = DialConnInfo(laddr, raddr, conf, nil)
 				logPrintln(2, ip, port, err)
 				if err != nil {
@@ -433,7 +431,7 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 				}
 			}
 
-			raddr := &net.TCPAddr{ip, port, ""}
+			raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
 			conn, err = net.DialTCP("tcp", laddr, raddr)
 			if err != nil {
 				return nil, err
@@ -449,7 +447,7 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 	}
 
 	ip := addresses[rand.Intn(len(addresses))]
-	raddr := &net.TCPAddr{ip, port, ""}
+	raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
 	conn, err = net.DialTCP("tcp", nil, raddr)
 	if err != nil {
 		return conn, err

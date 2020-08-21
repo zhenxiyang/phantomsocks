@@ -162,7 +162,6 @@ func DNSServer(listenAddr, defaultDNS string) error {
 			}(clientAddr, response)
 		}
 	}
-	return nil
 }
 
 var configFiles = flag.String("c", "default.conf", "Config")
@@ -174,6 +173,7 @@ var proxyListenAddr = flag.String("proxy", "", "Proxy")
 var dnsListenAddr = flag.String("dns", "", "DNS")
 var device = flag.String("device", "", "Device")
 var logLevel = flag.Int("log", 0, "LogLevel")
+var synack = flag.Bool("synack", false, "SYNACK Mode")
 
 func main() {
 	runtime.GOMAXPROCS(1)
@@ -227,5 +227,5 @@ func main() {
 	}
 
 	devices := strings.Split(*device, ",")
-	ptcp.ConnectionMonitor(devices)
+	ptcp.ConnectionMonitor(devices, *synack)
 }

@@ -38,7 +38,7 @@ func SocksProxy(client net.Conn) {
 			case 0x01: //IPv4
 				n, err = client.Read(b[:])
 				port := int(binary.BigEndian.Uint16(b[4:6]))
-				addr := net.TCPAddr{[]byte{b[0], b[1], b[2], b[3]}, port, ""}
+				addr := net.TCPAddr{IP: b[:4], Port: port, Zone: ""}
 				conf, ok := ConfigLookup(addr.IP.String())
 				if ok {
 					logPrintln(1, "Socks:", addr.IP.String(), addr.Port, conf)
@@ -160,7 +160,7 @@ func SocksProxy(client net.Conn) {
 			case 0x04: //IPv6
 				n, err = client.Read(b[:])
 				port := int(binary.BigEndian.Uint16(b[16:18]))
-				addr := net.TCPAddr{b[:16], port, ""}
+				addr := net.TCPAddr{IP: b[:16], Port: port, Zone: ""}
 				logPrintln(1, "Socks:", addr.IP.String(), addr.Port)
 				conn, err = net.DialTCP("tcp", nil, &addr)
 				client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
