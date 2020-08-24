@@ -1,7 +1,9 @@
 package phantomtcp
 
 import (
+	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -175,6 +177,134 @@ func SocksProxy(client net.Conn) {
 		if err != nil {
 			logPrintln(1, err)
 			return
+		}
+	}
+
+	defer conn.Close()
+	go io.Copy(client, conn)
+	io.Copy(conn, client)
+}
+
+func validOptionalPort(port string) bool {
+	if port == "" {
+		return true
+	}
+	if port[0] != ':' {
+		return false
+	}
+	for _, b := range port[1:] {
+		if b < '0' || b > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func splitHostPort(hostport string) (host string, port int) {
+	var err error
+	host = hostport
+	port = 80
+
+	colon := strings.LastIndexByte(host, ':')
+	if colon != -1 && validOptionalPort(host[colon:]) {
+		host = host[:colon]
+		port, err = strconv.Atoi(host[colon+1:])
+		if err != nil {
+			port = 80
+		}
+	}
+
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
+
+	return
+}
+
+func HTTPProxy(client net.Conn) {
+	defer client.Close()
+
+	var conn net.Conn
+	{
+		var b [1500]byte
+		n, err := client.Read(b[:])
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		var method, host string
+		var port int
+		fmt.Sscanf(string(b[:bytes.IndexByte(b[:], '\n')]), "%s%s", &method, &host)
+		host, port = splitHostPort(host)
+
+		if method == "CONNECT" {
+			fmt.Fprint(client, "HTTP/1.1 200 Connection established\r\n\r\n")
+			n, err = client.Read(b[:])
+			if err != nil {
+				log.Println(err)
+				return
+			}
+		}
+
+		conf, ok := ConfigLookup(host)
+
+		if ok {
+			logPrintln(1, "HTTP:", host, port, conf)
+
+			var ips []net.IP
+			if conf.Option&OPT_IPV6 != 0 {
+				_, ips = NSLookup(host, 28)
+			} else {
+				_, ips = NSLookup(host, 1)
+			}
+			if len(ips) == 0 {
+				logPrintln(1, host, "no such host")
+				return
+			}
+
+			if b[0] == 0x16 {
+				conn, err = Dial(ips, port, b[:n], &conf)
+				if err != nil {
+					logPrintln(1, host, err)
+					return
+				}
+			} else {
+				if conf.Option&OPT_HTTPS != 0 {
+					HttpMove(client, "https", b[:n])
+					return
+				} else if conf.Option&OPT_STRIP != 0 {
+					ip := ips[rand.Intn(len(ips))]
+					conn, err = DialStrip(ip.String(), "")
+					if err != nil {
+						logPrintln(1, err)
+						return
+					}
+					_, err = conn.Write(b[:n])
+				} else {
+					conn, err = HTTP(client, ips, port, b[:n], &conf)
+					if err != nil {
+						logPrintln(1, err)
+						return
+					}
+					io.Copy(client, conn)
+					return
+				}
+			}
+		} else {
+			host = net.JoinHostPort(host, strconv.Itoa(port))
+			logPrintln(1, host)
+
+			conn, err = net.Dial("tcp", host)
+			if err != nil {
+				logPrintln(1, err)
+				return
+			}
+			_, err = conn.Write(b[:n])
+			if err != nil {
+				logPrintln(1, err)
+				return
+			}
 		}
 	}
 

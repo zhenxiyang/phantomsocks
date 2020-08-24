@@ -11,51 +11,19 @@ import (
 	ptcp "./phantomtcp"
 )
 
-func SocksProxy(listenAddr string) {
+func ListenAndServe(listenAddr string, proxy func(net.Conn)) {
 	l, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Panic(err)
 	}
-	fmt.Println("Socks:", listenAddr)
+
 	for {
 		client, err := l.Accept()
 		if err != nil {
 			log.Panic(err)
 		}
 
-		go ptcp.SocksProxy(client)
-	}
-}
-
-func SNIProxy(listenAddr string) {
-	l, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		log.Panic(err)
-	}
-	fmt.Println("SNIProxy:", listenAddr)
-	for {
-		client, err := l.Accept()
-		if err != nil {
-			log.Panic(err)
-		}
-
-		go ptcp.SNIProxy(client)
-	}
-}
-
-func Proxy(listenAddr string) {
-	l, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		log.Panic(err)
-	}
-	fmt.Println("Proxy:", listenAddr)
-	for {
-		client, err := l.Accept()
-		if err != nil {
-			log.Panic(err)
-		}
-
-		go ptcp.Proxy(client)
+		go proxy(client)
 	}
 }
 
@@ -167,6 +135,7 @@ func DNSServer(listenAddr, defaultDNS string) error {
 var configFiles = flag.String("c", "default.conf", "Config")
 var hostsFile = flag.String("hosts", "", "Hosts")
 var socksListenAddr = flag.String("socks", "", "Socks5")
+var httpListenAddr = flag.String("http", "", "HTTP")
 var pacListenAddr = flag.String("pac", "", "PACServer")
 var sniListenAddr = flag.String("sni", "", "SNIProxy")
 var proxyListenAddr = flag.String("proxy", "", "Proxy")
@@ -208,18 +177,26 @@ func main() {
 	}
 
 	if *socksListenAddr != "" {
-		go SocksProxy(*socksListenAddr)
+		fmt.Println("Socks:", *socksListenAddr)
+		go ListenAndServe(*socksListenAddr, ptcp.SocksProxy)
 		if *pacListenAddr != "" {
 			go PACServer(*pacListenAddr, *socksListenAddr)
 		}
 	}
 
+	if *httpListenAddr != "" {
+		fmt.Println("Socks:", *httpListenAddr)
+		go ListenAndServe(*socksListenAddr, ptcp.HTTPProxy)
+	}
+
 	if *sniListenAddr != "" {
-		go SNIProxy(*sniListenAddr)
+		fmt.Println("SNI:", *sniListenAddr)
+		go ListenAndServe(*sniListenAddr, ptcp.SNIProxy)
 	}
 
 	if *proxyListenAddr != "" {
-		go Proxy(*proxyListenAddr)
+		fmt.Println("Proxy:", *proxyListenAddr)
+		go ListenAndServe(*proxyListenAddr, ptcp.Proxy)
 	}
 
 	if *dnsListenAddr != "" {
