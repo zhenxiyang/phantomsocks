@@ -185,7 +185,7 @@ func main() {
 	}
 
 	if *httpListenAddr != "" {
-		fmt.Println("Socks:", *httpListenAddr)
+		fmt.Println("HTTP:", *httpListenAddr)
 		go ListenAndServe(*socksListenAddr, ptcp.HTTPProxy)
 	}
 
