@@ -11,19 +11,39 @@ import (
 	ptcp "./phantomtcp"
 )
 
+var allowlist map[string]bool = nil
+
 func ListenAndServe(listenAddr string, proxy func(net.Conn)) {
 	l, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	for {
-		client, err := l.Accept()
-		if err != nil {
-			log.Panic(err)
-		}
+	if allowlist != nil {
+		for {
+			client, err := l.Accept()
+			if err != nil {
+				log.Panic(err)
+			}
 
-		go proxy(client)
+			remoteAddr := client.RemoteAddr()
+			remoteTCPAddr, _ := net.ResolveTCPAddr(remoteAddr.Network(), remoteAddr.String())
+			_, ok := allowlist[remoteTCPAddr.IP.String()]
+			if ok {
+				go proxy(client)
+			} else {
+				client.Close()
+			}
+		}
+	} else {
+		for {
+			client, err := l.Accept()
+			if err != nil {
+				log.Panic(err)
+			}
+
+			go proxy(client)
+		}
 	}
 }
 
@@ -143,6 +163,7 @@ var dnsListenAddr = flag.String("dns", "", "DNS")
 var device = flag.String("device", "", "Device")
 var logLevel = flag.Int("log", 0, "LogLevel")
 var synack = flag.Bool("synack", false, "SYNACK Mode")
+var clients = flag.String("clients", "", "Clients")
 
 func main() {
 	runtime.GOMAXPROCS(1)
@@ -176,6 +197,14 @@ func main() {
 		}
 	}
 
+	if *clients != "" {
+		allowlist = make(map[string]bool)
+		list := strings.Split(*clients, ",")
+		for _, c := range list {
+			allowlist[c] = true
+		}
+	}
+
 	if *socksListenAddr != "" {
 		fmt.Println("Socks:", *socksListenAddr)
 		go ListenAndServe(*socksListenAddr, ptcp.SocksProxy)
@@ -186,7 +215,7 @@ func main() {
 
 	if *httpListenAddr != "" {
 		fmt.Println("HTTP:", *httpListenAddr)
-		go ListenAndServe(*socksListenAddr, ptcp.HTTPProxy)
+		go ListenAndServe(*httpListenAddr, ptcp.HTTPProxy)
 	}
 
 	if *sniListenAddr != "" {

@@ -207,11 +207,11 @@ func splitHostPort(hostport string) (host string, port int) {
 
 	colon := strings.LastIndexByte(host, ':')
 	if colon != -1 && validOptionalPort(host[colon:]) {
-		host = host[:colon]
 		port, err = strconv.Atoi(host[colon+1:])
 		if err != nil {
 			port = 80
 		}
+		host = host[:colon]
 	}
 
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
@@ -236,16 +236,27 @@ func HTTPProxy(client net.Conn) {
 		var method, host string
 		var port int
 		fmt.Sscanf(string(b[:bytes.IndexByte(b[:], '\n')]), "%s%s", &method, &host)
-		host, port = splitHostPort(host)
 
 		if method == "CONNECT" {
 			fmt.Fprint(client, "HTTP/1.1 200 Connection established\r\n\r\n")
 			n, err = client.Read(b[:])
 			if err != nil {
-				log.Println(err)
+				logPrintln(1, err)
+				return
+			}
+		} else {
+			if strings.HasPrefix(host, "http://") {
+				host = host[7:]
+				index := strings.IndexByte(host, '/')
+				if index != -1 {
+					host = host[:index]
+				}
+			} else {
 				return
 			}
 		}
+
+		host, port = splitHostPort(host)
 
 		conf, ok := ConfigLookup(host)
 
