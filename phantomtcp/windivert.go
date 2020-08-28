@@ -1,35 +1,17 @@
-// +build !windows
-
 package phantomtcp
 
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"sync"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
+	"github.com/macronut/godivert"
 )
 
 func DevicePrint() {
-	devices, err := pcap.FindAllDevs()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("Devices found:")
-	for _, device := range devices {
-		fmt.Println("\nName: ", device.Name)
-		fmt.Println("Description: ", device.Description)
-		fmt.Println("Devices addresses: ", device.Description)
-		for _, address := range device.Addresses {
-			fmt.Println("- IP address: ", address.IP)
-			fmt.Println("- Subnet mask: ", address.Netmask)
-		}
-	}
 }
 
 type ConnectionInfo struct {
@@ -43,43 +25,42 @@ var ConnSyn map[string]int
 var ConnInfo4 [65536]chan *ConnectionInfo
 var ConnInfo6 [65536]chan *ConnectionInfo
 
-var pcapHandle *pcap.Handle
+var winDivert *godivert.WinDivertHandle
 
 func connectionMonitor(device string, synack bool) {
 	fmt.Printf("Device: %v\n", device)
 
-	snapLen := int32(65535)
-
 	var filter string
 	if synack {
-		filter = "(ip6[6]==6 and ip6[53]&18==18) or (tcp[13]&18==18)"
+		filter = "inbound and tcp.Syn"
 	} else {
-		filter = "(ip6[6]==6 and ip6[53]&18==2) or (tcp[13]&18==2)"
+		filter = "outbound and tcp.Syn"
 	}
 
 	var err error
-	pcapHandle, err = pcap.OpenLive(device, snapLen, true, pcap.BlockForever)
+	var layer uint8
+	layer = 0
+	winDivert, err = godivert.WinDivertOpen(filter, layer, 1, 0)
 	if err != nil {
-		fmt.Printf("pcap open live failed: %v", err)
+		fmt.Printf("winDivert open failed: %v", err)
 		return
 	}
+	defer winDivert.Close()
 
-	if err = pcapHandle.SetBPFFilter(filter); err != nil {
-		fmt.Printf("set bpf filter failed: %v", err)
-		return
-	}
-	defer pcapHandle.Close()
-
-	packetSource := gopacket.NewPacketSource(pcapHandle, pcapHandle.LinkType())
-	packetSource.NoCopy = false
 	for {
-		packet, err := packetSource.NextPacket()
+		divertpacket, err := winDivert.Recv()
 		if err != nil {
 			logPrintln(1, err)
 			continue
 		}
+		ipv6 := divertpacket.Raw[0]>>4 == 6
+		var packet gopacket.Packet
+		if ipv6 {
+			packet = gopacket.NewPacket(divertpacket.Raw, layers.LayerTypeIPv6, gopacket.Default)
+		} else {
+			packet = gopacket.NewPacket(divertpacket.Raw, layers.LayerTypeIPv4, gopacket.Default)
+		}
 
-		link := packet.LinkLayer()
 		ip := packet.NetworkLayer()
 		tcp := packet.TransportLayer().(*layers.TCP)
 
@@ -120,17 +101,7 @@ func connectionMonitor(device string, synack bool) {
 				default:
 				}
 
-				switch link := link.(type) {
-				case *layers.Ethernet:
-					if synack {
-						srcMAC := link.DstMAC
-						link.DstMAC = link.SrcMAC
-						link.SrcMAC = srcMAC
-					}
-					ch <- &ConnectionInfo{link, ip, *tcp}
-				default:
-					ch <- &ConnectionInfo{nil, ip, *tcp}
-				}
+				ch <- &ConnectionInfo{nil, ip, *tcp}
 			}
 			SynLock.RUnlock()
 		case *layers.IPv6:
@@ -169,17 +140,7 @@ func connectionMonitor(device string, synack bool) {
 				default:
 				}
 
-				switch link := link.(type) {
-				case *layers.Ethernet:
-					if synack {
-						srcMAC := link.DstMAC
-						link.DstMAC = link.SrcMAC
-						link.SrcMAC = srcMAC
-					}
-					ch <- &ConnectionInfo{link, ip, *tcp}
-				default:
-					ch <- &ConnectionInfo{nil, ip, *tcp}
-				}
+				ch <- &ConnectionInfo{nil, ip, *tcp}
 			}
 			SynLock.RUnlock()
 		}
@@ -268,10 +229,16 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 				link, ip, tcpLayer, gopacket.Payload(payload),
 			)
 		}
-		outgoingPacket := buffer.Bytes()
+
+		var divertAddr godivert.WinDivertAddress
+		var divertpacket godivert.Packet
+		divertpacket.Raw = buffer.Bytes()
+		divertpacket.PacketLen = uint(len(divertpacket.Raw))
+		divertpacket.Addr = &divertAddr
+		divertpacket.ParseHeaders()
 
 		for i := 0; i < count; i++ {
-			err := pcapHandle.WritePacketData(outgoingPacket)
+			_, err := winDivert.Send(&divertpacket)
 			if err != nil {
 				return err
 			}
