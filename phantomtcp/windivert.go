@@ -1,7 +1,6 @@
 package phantomtcp
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -27,9 +26,7 @@ var ConnInfo6 [65536]chan *ConnectionInfo
 
 var winDivert *godivert.WinDivertHandle
 
-func connectionMonitor(device string, synack bool) {
-	fmt.Printf("Device: %v\n", device)
-
+func connectionMonitor(synack bool, layer uint8) {
 	var filter string
 	if synack {
 		filter = "inbound and tcp.Syn"
@@ -38,8 +35,6 @@ func connectionMonitor(device string, synack bool) {
 	}
 
 	var err error
-	var layer uint8
-	layer = 0
 	winDivert, err = godivert.WinDivertOpen(filter, layer, 1, 0)
 	if err != nil {
 		fmt.Printf("winDivert open failed: %v", err)
@@ -148,24 +143,11 @@ func connectionMonitor(device string, synack bool) {
 }
 
 func ConnectionMonitor(devices []string, synack bool) {
-	ConnSyn = make(map[string]int, 65536)
-	for i := 0; i < 65536; i++ {
-		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
-		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
-	}
-
-	if len(devices) == 1 {
-		connectionMonitor(devices[0], synack)
-	} else {
-		for i := 1; i < len(devices); i++ {
-			go connectionMonitor(devices[i], synack)
-		}
-		connectionMonitor(devices[0], synack)
-	}
+	connectionMonitor(synack, 0)
+	connectionMonitor(synack, 1)
 }
 
 func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, count int) error {
-	linkLayer := connInfo.Link
 	ipLayer := connInfo.IP
 
 	tcpLayer := &layers.TCP{
@@ -211,40 +193,35 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 
 	tcpLayer.SetNetworkLayerForChecksum(ipLayer)
 
-	if linkLayer != nil {
-		link := linkLayer.(*layers.Ethernet)
-		switch ip := ipLayer.(type) {
-		case *layers.IPv4:
-			if config.Option&OPT_TTL != 0 {
-				ip.TTL = config.TTL
-			}
-			gopacket.SerializeLayers(buffer, options,
-				link, ip, tcpLayer, gopacket.Payload(payload),
-			)
-		case *layers.IPv6:
-			if config.Option&OPT_TTL != 0 {
-				ip.HopLimit = config.TTL
-			}
-			gopacket.SerializeLayers(buffer, options,
-				link, ip, tcpLayer, gopacket.Payload(payload),
-			)
+	switch ip := ipLayer.(type) {
+	case *layers.IPv4:
+		if config.Option&OPT_TTL != 0 {
+			ip.TTL = config.TTL
 		}
-
-		var divertAddr godivert.WinDivertAddress
-		var divertpacket godivert.Packet
-		divertpacket.Raw = buffer.Bytes()
-		divertpacket.PacketLen = uint(len(divertpacket.Raw))
-		divertpacket.Addr = &divertAddr
-		divertpacket.ParseHeaders()
-
-		for i := 0; i < count; i++ {
-			_, err := winDivert.Send(&divertpacket)
-			if err != nil {
-				return err
-			}
+		gopacket.SerializeLayers(buffer, options,
+			ip, tcpLayer, gopacket.Payload(payload),
+		)
+	case *layers.IPv6:
+		if config.Option&OPT_TTL != 0 {
+			ip.HopLimit = config.TTL
 		}
-	} else {
-		return errors.New("Invalid LinkLayer")
+		gopacket.SerializeLayers(buffer, options,
+			ip, tcpLayer, gopacket.Payload(payload),
+		)
+	}
+
+	var divertAddr godivert.WinDivertAddress
+	var divertpacket godivert.Packet
+	divertpacket.Raw = buffer.Bytes()
+	divertpacket.PacketLen = uint(len(divertpacket.Raw))
+	divertpacket.Addr = &divertAddr
+	divertpacket.ParseHeaders()
+
+	for i := 0; i < count; i++ {
+		_, err := winDivert.Send(&divertpacket)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
