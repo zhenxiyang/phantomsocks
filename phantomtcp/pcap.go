@@ -194,13 +194,8 @@ func ConnectionMonitor(devices []string, synack bool) {
 		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
 	}
 
-	if len(devices) == 1 {
-		connectionMonitor(devices[0], synack)
-	} else {
-		for i := 1; i < len(devices); i++ {
-			go connectionMonitor(devices[i], synack)
-		}
-		connectionMonitor(devices[0], synack)
+	for i := 0; i < len(devices); i++ {
+		go connectionMonitor(devices[i], synack)
 	}
 }
 

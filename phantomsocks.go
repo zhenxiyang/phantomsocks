@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"os/signal"
 	"runtime"
 	"strings"
 
 	ptcp "./phantomtcp"
+	proxy "./proxy"
 )
 
 var allowlist map[string]bool = nil
@@ -158,7 +161,8 @@ var socksListenAddr = flag.String("socks", "", "Socks5")
 var httpListenAddr = flag.String("http", "", "HTTP")
 var pacListenAddr = flag.String("pac", "", "PACServer")
 var sniListenAddr = flag.String("sni", "", "SNIProxy")
-var proxyListenAddr = flag.String("proxy", "", "Proxy")
+var redirectAddr = flag.String("redir", "", "Redirect")
+var systemProxy = flag.String("proxy", "", "Proxy")
 var dnsListenAddr = flag.String("dns", "", "DNS")
 var device = flag.String("device", "", "Device")
 var logLevel = flag.Int("log", 0, "LogLevel")
@@ -205,6 +209,9 @@ func main() {
 		}
 	}
 
+	devices := strings.Split(*device, ",")
+	ptcp.ConnectionMonitor(devices, *synack)
+
 	if *socksListenAddr != "" {
 		fmt.Println("Socks:", *socksListenAddr)
 		go ListenAndServe(*socksListenAddr, ptcp.SocksProxy)
@@ -223,9 +230,18 @@ func main() {
 		go ListenAndServe(*sniListenAddr, ptcp.SNIProxy)
 	}
 
-	if *proxyListenAddr != "" {
-		fmt.Println("Proxy:", *proxyListenAddr)
-		go ListenAndServe(*proxyListenAddr, ptcp.Proxy)
+	if *redirectAddr != "" {
+		fmt.Println("Redirect:", *redirectAddr)
+		go ListenAndServe(*redirectAddr, ptcp.Proxy)
+	}
+
+	if *systemProxy != "" {
+		for _, dev := range devices {
+			err := proxy.SetProxy(dev, *systemProxy, true)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
 	}
 
 	if *dnsListenAddr != "" {
@@ -238,6 +254,17 @@ func main() {
 		go DNSServer(dnsServer, defaultDNS)
 	}
 
-	devices := strings.Split(*device, ",")
-	ptcp.ConnectionMonitor(devices, *synack)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
+	s := <-c
+	fmt.Println(s)
+
+	if *socksListenAddr != "" {
+		for _, dev := range devices {
+			err := proxy.SetProxy(dev, *systemProxy, false)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
 }
