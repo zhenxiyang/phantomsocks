@@ -18,7 +18,13 @@ phantomsocks
   -sni string
     	SNIProxy
   -socks string 
-    	Socks5
+    	Socks proxy
+  -http string
+      HTTP proxy
+  -redir string
+      Netfilter TCP redirect
+  -proxy string
+      Set system proxy
 ```
 ## Configure
 ```
@@ -36,7 +42,10 @@ phantomsocks
   w-md5             #the fake tcp packets will have a wrong md5 option
   w-csum            #the fake tcp packets will have a wrong checksum
   w-ack             #the fake tcp packets will have a wrong ACK number
-  tfo               #SYN packet will take a part of data when the server supports TCP Fast Open
+  w-seq             #the fake tcp packets will have a wrong SEQ number
+  w-time            #the fake tcp packets will have a wrong timestamp
+  s-seg             #the first tcp payload will be very small
+  tfo               #SYN packet will take a part of data when the server supports TCP Fast Open
   https             #the domain below will be move to https when using http on port 80
 ```
 ## Installation
