@@ -79,7 +79,7 @@ func PACServer(listenAddr string, proxyAddr string) {
 	}
 }
 
-func DNSServer(listenAddr, defaultDNS string) error {
+func DNSServer(listenAddr string) error {
 	addr, err := net.ResolveUDPAddr("udp", listenAddr)
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func DNSServer(listenAddr, defaultDNS string) error {
 	}
 	defer conn.Close()
 
-	fmt.Println("DNS:", defaultDNS, listenAddr)
+	fmt.Println("DNS:", listenAddr)
 	data := make([]byte, 512)
 	for {
 		n, clientAddr, err := conn.ReadFromUDP(data)
@@ -102,56 +102,48 @@ func DNSServer(listenAddr, defaultDNS string) error {
 		if ok {
 			index := 0
 			if conf.Option&ptcp.OPT_IPV6 != 0 {
-				index, _ = ptcp.NSLookup(qname, 28)
+				index, _ = ptcp.NSLookup(qname, 28, conf.Server)
 			} else {
-				index, _ = ptcp.NSLookup(qname, 1)
+				index, _ = ptcp.NSLookup(qname, 1, conf.Server)
 			}
 			response := ptcp.BuildLie(data[:n], index, qtype)
 			conn.WriteToUDP(response, clientAddr)
 			continue
 		}
 
-		if defaultDNS != "" {
-			if ptcp.LogLevel > 1 {
-				fmt.Println("DNS:", clientAddr, qname)
-			}
-			dnsConn, err := net.Dial("udp", defaultDNS)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			_, err = dnsConn.Write(data[:n])
-			if err != nil {
-				log.Println(err)
-				dnsConn.Close()
-				continue
-			}
-			go func(clientAddr *net.UDPAddr, dnsConn net.Conn) {
-				defer dnsConn.Close()
-				recv := make([]byte, 1480)
-				n, err := dnsConn.Read(recv)
-				if err != nil {
-					log.Println(err)
+		request := make([]byte, n)
+		copy(request, data[:n])
+		go func(clientAddr *net.UDPAddr, request []byte) {
+			var response []byte
+			var err error
+			_server := strings.SplitN(ptcp.DNS, "/", 4)
+			if len(_server) > 2 {
+				switch _server[0] {
+				case "udp:":
+					if ptcp.LogLevel > 1 {
+						fmt.Println("UDP:", clientAddr, qname)
+					}
+					response, err = ptcp.UDPlookup(request, _server[2])
+				case "tcp:":
+					if ptcp.LogLevel > 1 {
+						fmt.Println("TCP:", clientAddr, qname)
+					}
+					response, err = ptcp.TCPlookup(request, _server[2])
+				case "tls:":
+					if ptcp.LogLevel > 1 {
+						fmt.Println("DOT:", clientAddr, qname)
+					}
+					response, err = ptcp.TLSlookup(request, _server[2])
+				default:
 					return
 				}
-				conn.WriteToUDP(recv[:n], clientAddr)
-			}(clientAddr, dnsConn)
-		} else {
-			if ptcp.LogLevel > 1 {
-				fmt.Println("DoT:", clientAddr, qname)
 			}
-
-			response := make([]byte, n)
-			copy(response, data[:n])
-			go func(clientAddr *net.UDPAddr, response []byte) {
-				recv, err := ptcp.TLSlookup(response, ptcp.DNS)
-				if err != nil {
-					log.Println(err)
-					return
-				}
-				conn.WriteToUDP(recv[:n], clientAddr)
-			}(clientAddr, response)
-		}
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			conn.WriteToUDP(response, clientAddr)
+		}(clientAddr, request)
 	}
 }
 
@@ -245,13 +237,7 @@ func main() {
 	}
 
 	if *dnsListenAddr != "" {
-		dnsprams := strings.Split(*dnsListenAddr, "#")
-		dnsServer := dnsprams[0]
-		defaultDNS := ""
-		if len(dnsprams) > 1 {
-			defaultDNS = dnsprams[1]
-		}
-		go DNSServer(dnsServer, defaultDNS)
+		go DNSServer(*dnsListenAddr)
 	}
 
 	c := make(chan os.Signal, 1)

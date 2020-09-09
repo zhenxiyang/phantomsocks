@@ -133,6 +133,38 @@ func TCPlookupDNS64(request []byte, address string, offset int, prefix []byte) (
 	return response6[:offset6], nil
 }
 
+func UDPlookup(request []byte, address string) ([]byte, error) {
+	conn, err := net.Dial("udp", address)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	_, err = conn.Write(request)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetReadDeadline(time.Now().Add(time.Second * 5))
+	response := make([]byte, 1024)
+
+	if request[11] == 0 {
+		n, err := conn.Read(response[:])
+		return response[:n], err
+	} else {
+		var n int
+		for {
+			n, err = conn.Read(response[:])
+			if err != nil {
+				return nil, err
+			}
+
+			if request[11] == 0 || response[11] > 0 {
+				break
+			}
+		}
+		return response[:n], nil
+	}
+}
+
 func TLSlookup(request []byte, address string) ([]byte, error) {
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
@@ -217,7 +249,7 @@ func GetName(buf []byte, offset int) (string, int) {
 			name += "."
 		}
 		if length < 63 {
-			name += string(buf[offset:offset+length])
+			name += string(buf[offset : offset+length])
 			offset += int(length)
 			if offset+2 > len(buf) {
 				return "", offset
@@ -226,74 +258,94 @@ func GetName(buf []byte, offset int) (string, int) {
 			_offset := int(buf[offset])
 			_name, _ := GetName(buf, _offset)
 			name += _name
-			return name, offset+1
+			return name, offset + 1
 		}
 	}
 	return name, offset
 }
 
-
-func getAnswers(answers []byte, offset int, count int, qtype uint16) []net.IP {
-	ips := make([]net.IP, 0)
-
-	cname := ""
-	for i := 0; i < count; i++ {
-		for {
-			if offset >= len(answers) {
-				return nil
+func GetNameOffset(buf []byte, offset int) int {
+	for {
+		if offset >= len(buf) {
+			return 0
+		}
+		length := buf[offset]
+		offset++
+		if length == 0 {
+			break
+		}
+		if length < 63 {
+			offset += int(length)
+			if offset+2 > len(buf) {
+				return 0
 			}
-			length := answers[offset]
+		} else {
 			offset++
-			if length == 0 {
-				break
-			}
-			if length < 63 {
-				offset += int(length)
-				if offset+2 > len(answers) {
-					return nil
-				}
-			} else {
-				offset++
-				break
-			}
+			break
 		}
-		if offset+2 > len(answers) {
+	}
+
+	return offset
+}
+
+func getAnswers(response []byte) []net.IP {
+	QDCount := int(binary.BigEndian.Uint16(response[4:6]))
+	ANCount := int(binary.BigEndian.Uint16(response[6:8]))
+
+	offset := 12
+	for i := 0; i < QDCount; i++ {
+		_offset := GetNameOffset(response, offset)
+		if _offset == 0 {
 			return nil
 		}
-		AType := binary.BigEndian.Uint16(answers[offset : offset+2])
+		offset = _offset + 4
+	}
+
+	ips := make([]net.IP, 0)
+	cname := ""
+	for i := 0; i < ANCount; i++ {
+		_offset := GetNameOffset(response, offset)
+		if _offset == 0 {
+			return nil
+		}
+		offset = _offset
+		if offset+2 > len(response) {
+			return nil
+		}
+		AType := binary.BigEndian.Uint16(response[offset : offset+2])
 		offset += 8
-		if offset+2 > len(answers) {
+		if offset+2 > len(response) {
 			return nil
 		}
-		DataLength := binary.BigEndian.Uint16(answers[offset : offset+2])
+		DataLength := binary.BigEndian.Uint16(response[offset : offset+2])
 		offset += 2
 
 		if AType == 1 {
-			if offset+4 > len(answers) {
+			if offset+4 > len(response) {
 				return nil
 			}
-			data := answers[offset : offset+4]
+			data := response[offset : offset+4]
 			ip := net.IPv4(data[0], data[1], data[2], data[3])
 			ips = append(ips, ip)
 		} else if AType == 28 {
 			var data [16]byte
-			if offset+16 > len(answers) {
+			if offset+16 > len(response) {
 				return nil
 			}
-			copy(data[:], answers[offset:offset+16])
-			ip := net.IP(answers[offset : offset+16])
+			copy(data[:], response[offset:offset+16])
+			ip := net.IP(response[offset : offset+16])
 			ips = append(ips, ip)
 		} else if AType == 5 {
-			cname, _ = GetName(answers, offset)
+			cname, _ = GetName(response, offset)
 			logPrintln(4, "CNAME:", cname)
 		}
 
 		offset += int(DataLength)
 	}
 
-	if len(ips) == 0 && cname != "" {
-		_, ips = NSLookup(cname, qtype)
-	}
+	//if len(ips) == 0 && cname != "" {
+	//	_, ips = NSLookup(cname, qtype)
+	//}
 
 	return ips
 }
@@ -388,14 +440,20 @@ func PackQName(name string) []byte {
 	return QName
 }
 
-func PackRequest(name string, qtype uint16) []byte {
+func PackRequest(name string, qtype uint16, ecs string) []byte {
 	Request := make([]byte, 512)
+
 	binary.BigEndian.PutUint16(Request[:], 0)       //ID
 	binary.BigEndian.PutUint16(Request[2:], 0x0100) //Flag
 	binary.BigEndian.PutUint16(Request[4:], 1)      //QDCount
 	binary.BigEndian.PutUint16(Request[6:], 0)      //ANCount
 	binary.BigEndian.PutUint16(Request[8:], 0)      //NSCount
-	binary.BigEndian.PutUint16(Request[10:], 0)     //ARCount
+	if ecs != "" {
+		binary.BigEndian.PutUint16(Request[10:], 1) //ARCount
+	} else {
+		binary.BigEndian.PutUint16(Request[10:], 0) //ARCount
+	}
+
 	qname := PackQName(name)
 	length := len(qname)
 	copy(Request[12:], qname)
@@ -405,10 +463,59 @@ func PackRequest(name string, qtype uint16) []byte {
 	binary.BigEndian.PutUint16(Request[length:], 0x01) //QClass
 	length += 2
 
+	if ecs != "" {
+		Request[length] = 0 //Name
+		length++
+		binary.BigEndian.PutUint16(Request[length:], 41) // Type
+		length += 2
+		binary.BigEndian.PutUint16(Request[length:], 4096) // UDP Payload
+		length += 2
+		Request[length] = 0 // Highter bits in extended RCCODE
+		length++
+		Request[length] = 0 // EDNS0 Version
+		length++
+		binary.BigEndian.PutUint16(Request[length:], 0x800) // Z
+		length += 2
+
+		ecsip := net.ParseIP(ecs)
+		ecsip4 := ecsip.To4()
+		if ecsip4 != nil {
+			binary.BigEndian.PutUint16(Request[length:], 11) // Length
+			length += 2
+			binary.BigEndian.PutUint16(Request[length:], 8) // Option Code
+			length += 2
+			binary.BigEndian.PutUint16(Request[length:], 7) // Option Length
+			length += 2
+			binary.BigEndian.PutUint16(Request[length:], 1) // Family
+			length += 2
+			Request[length] = 24 // Source Netmask
+			length++
+			Request[length] = 0 // Scope Netmask
+			length++
+			copy(Request[length:], ecsip4[:3])
+			length += 3
+		} else {
+			binary.BigEndian.PutUint16(Request[length:], 15) // Length
+			length += 2
+			binary.BigEndian.PutUint16(Request[length:], 8) // Option Code
+			length += 2
+			binary.BigEndian.PutUint16(Request[length:], 11) // Option Length
+			length += 2
+			binary.BigEndian.PutUint16(Request[length:], 2) // Family
+			length += 2
+			Request[length] = 56 // Source Netmask
+			length++
+			Request[length] = 0 // Scope Netmask
+			length++
+			copy(Request[length:], ecsip[:7])
+			length += 7
+		}
+	}
+
 	return Request[:length]
 }
 
-func NSLookup(name string, qtype uint16) (int, []net.IP) {
+func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 	ans, ok := DNSCache[name]
 	if ok {
 		return ans.Index, ans.Addresses
@@ -428,19 +535,49 @@ func NSLookup(name string, qtype uint16) (int, []net.IP) {
 		offset++
 	}
 
-	request := PackRequest(name, qtype)
-	response, err := TLSlookup(request, DNS)
+	var request []byte
+	var response []byte
+	var err error
+
+	_server := strings.SplitN(server, "/", 4)
+	if len(_server) > 2 {
+		switch _server[0] {
+		case "udp:":
+			if len(_server) > 3 {
+				request = PackRequest(name, qtype, _server[3])
+			} else {
+				request = PackRequest(name, qtype, "")
+			}
+			response, err = UDPlookup(request, _server[2])
+		case "tcp:":
+			if len(_server) > 3 {
+				request = PackRequest(name, qtype, _server[3])
+			} else {
+				request = PackRequest(name, qtype, "")
+			}
+			response, err = TCPlookup(request, _server[2])
+		case "tls:":
+			if len(_server) > 3 {
+				request = PackRequest(name, qtype, _server[3])
+			} else {
+				request = PackRequest(name, qtype, "")
+			}
+			response, err = TLSlookup(request, _server[2])
+		default:
+			return 0, nil
+		}
+	}
 	if err != nil {
-		log.Println(err)
+		logPrintln(1, err)
 		return 0, nil
 	}
-	count := int(binary.BigEndian.Uint16(response[6:8]))
-	ips := getAnswers(response, len(request), count, qtype)
-        logPrintln(3, name, qtype, count, ips)
+
+	ips := getAnswers(response)
+	logPrintln(3, name, qtype, ips)
 
 	index := len(Nose)
 	DNSCache[name] = Answer{index, ips}
-        Nose = append(Nose, name)
+	Nose = append(Nose, name)
 
 	return index, ips
 }

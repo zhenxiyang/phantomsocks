@@ -83,9 +83,9 @@ func SocksProxy(client net.Conn) {
 
 					var ips []net.IP
 					if conf.Option&OPT_IPV6 != 0 {
-						_, ips = NSLookup(host, 28)
+						_, ips = NSLookup(host, 28, conf.Server)
 					} else {
-						_, ips = NSLookup(host, 1)
+						_, ips = NSLookup(host, 1, conf.Server)
 					}
 
 					if len(ips) == 0 {
@@ -265,9 +265,9 @@ func HTTPProxy(client net.Conn) {
 
 			var ips []net.IP
 			if conf.Option&OPT_IPV6 != 0 {
-				_, ips = NSLookup(host, 28)
+				_, ips = NSLookup(host, 28, conf.Server)
 			} else {
-				_, ips = NSLookup(host, 1)
+				_, ips = NSLookup(host, 1, conf.Server)
 			}
 			if len(ips) == 0 {
 				logPrintln(1, host, "no such host")
@@ -373,9 +373,9 @@ func SNIProxy(client net.Conn) {
 
 			var ips []net.IP
 			if conf.Option&OPT_IPV6 != 0 {
-				_, ips = NSLookup(host, 28)
+				_, ips = NSLookup(host, 28, conf.Server)
 			} else {
-				_, ips = NSLookup(host, 1)
+				_, ips = NSLookup(host, 1, conf.Server)
 			}
 			if len(ips) == 0 {
 				logPrintln(1, host, "no such host")
@@ -480,9 +480,9 @@ func Proxy(client net.Conn) {
 
 			var ips []net.IP
 			if config.Option&OPT_IPV6 != 0 {
-				_, ips = NSLookup(host, 28)
+				_, ips = NSLookup(host, 28, config.Server)
 			} else {
-				_, ips = NSLookup(host, 1)
+				_, ips = NSLookup(host, 1, config.Server)
 			}
 			if len(ips) == 0 {
 				logPrintln(1, host, "no such host")
