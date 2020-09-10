@@ -264,19 +264,21 @@ func GetName(buf []byte, offset int) (string, int) {
 	return name, offset
 }
 
-func GetNameOffset(buf []byte, offset int) int {
+func GetNameOffset(response []byte, offset int) int {
+	responseLen := len(response)
+
 	for {
-		if offset >= len(buf) {
+		if offset >= responseLen {
 			return 0
 		}
-		length := buf[offset]
+		length := response[offset]
 		offset++
 		if length == 0 {
 			break
 		}
 		if length < 63 {
 			offset += int(length)
-			if offset+2 > len(buf) {
+			if offset+2 > responseLen {
 				return 0
 			}
 		} else {
@@ -289,10 +291,20 @@ func GetNameOffset(buf []byte, offset int) int {
 }
 
 func getAnswers(response []byte) []net.IP {
+	responseLen := len(response)
+
+	offset := 12
+	if offset > responseLen {
+		return nil
+	}
+
 	QDCount := int(binary.BigEndian.Uint16(response[4:6]))
 	ANCount := int(binary.BigEndian.Uint16(response[6:8]))
 
-	offset := 12
+	if ANCount == 0 {
+		return nil
+	}
+
 	for i := 0; i < QDCount; i++ {
 		_offset := GetNameOffset(response, offset)
 		if _offset == 0 {
@@ -309,19 +321,19 @@ func getAnswers(response []byte) []net.IP {
 			return nil
 		}
 		offset = _offset
-		if offset+2 > len(response) {
+		if offset+2 > responseLen {
 			return nil
 		}
 		AType := binary.BigEndian.Uint16(response[offset : offset+2])
 		offset += 8
-		if offset+2 > len(response) {
+		if offset+2 > responseLen {
 			return nil
 		}
 		DataLength := binary.BigEndian.Uint16(response[offset : offset+2])
 		offset += 2
 
 		if AType == 1 {
-			if offset+4 > len(response) {
+			if offset+4 > responseLen {
 				return nil
 			}
 			data := response[offset : offset+4]
@@ -329,7 +341,7 @@ func getAnswers(response []byte) []net.IP {
 			ips = append(ips, ip)
 		} else if AType == 28 {
 			var data [16]byte
-			if offset+16 > len(response) {
+			if offset+16 > responseLen {
 				return nil
 			}
 			copy(data[:], response[offset:offset+16])
