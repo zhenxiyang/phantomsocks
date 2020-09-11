@@ -452,6 +452,29 @@ func PackQName(name string) []byte {
 	return QName
 }
 
+type ServerOptions struct {
+	ECS string
+	PD  string
+}
+
+func ParseOptions(options string) ServerOptions {
+	opts := strings.Split(options, "&")
+	var serverOpts ServerOptions
+	for _, opt := range opts {
+		key := strings.SplitN(opt, "=", 2)
+		if len(key) > 1 {
+			switch key[0] {
+			case "ecs":
+				serverOpts.ECS = key[1]
+			case "pd":
+				serverOpts.PD = key[1]
+			}
+		}
+	}
+
+	return serverOpts
+}
+
 func PackRequest(name string, qtype uint16, ecs string) []byte {
 	Request := make([]byte, 512)
 
@@ -552,28 +575,22 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 	var err error
 
 	_server := strings.SplitN(server, "/", 4)
+
+	var options ServerOptions
+	if len(_server) > 3 {
+		options = ParseOptions(_server[3])
+	}
+
 	if len(_server) > 2 {
 		switch _server[0] {
 		case "udp:":
-			if len(_server) > 3 {
-				request = PackRequest(name, qtype, _server[3])
-			} else {
-				request = PackRequest(name, qtype, "")
-			}
+			request = PackRequest(name, qtype, options.ECS)
 			response, err = UDPlookup(request, _server[2])
 		case "tcp:":
-			if len(_server) > 3 {
-				request = PackRequest(name, qtype, _server[3])
-			} else {
-				request = PackRequest(name, qtype, "")
-			}
+			request = PackRequest(name, qtype, options.ECS)
 			response, err = TCPlookup(request, _server[2])
 		case "tls:":
-			if len(_server) > 3 {
-				request = PackRequest(name, qtype, _server[3])
-			} else {
-				request = PackRequest(name, qtype, "")
-			}
+			request = PackRequest(name, qtype, options.ECS)
 			response, err = TLSlookup(request, _server[2])
 		default:
 			return 0, nil
@@ -585,6 +602,12 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 	}
 
 	ips := getAnswers(response)
+
+	if options.PD != "" {
+		for i, ip := range ips {
+			ips[i] = net.ParseIP(options.PD + ip.String())
+		}
+	}
 	logPrintln(3, name, qtype, ips)
 
 	index := len(Nose)
