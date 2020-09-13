@@ -28,14 +28,20 @@ phantomsocks
 ```
 ## Configure
 ```
-  server=IP:Port    #Domain in config will use this DNS(DNSoverTCP),if not set it will use the DNS of system
-  ipv6=true/false   #Domain below will enable/disable IPv6 
+  server=*          #Domain below will use this DNS 
   ttl=*             #the fake tcp packet will use this TTL
   domain=ip,ip,...  #this domain will use these IPs
   domain            #this domain will be resolved by DNS
   ip:port           #this ip:port will send fake packet when creating connection
   method=*          #the methods to modify TCP
-  ```
+```
+### server:
+```
+  server=udp://8.8.8.8:53
+  server=tcp://8.8.8.8:53
+  server=tls://8.8.8.8:853
+  server=udp://8.8.8.8:53/ecs=35.190.247.1
+```
 ### methods:
 ```
   ttl               #the fake tcp packets will use the TTL you set
