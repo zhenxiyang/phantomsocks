@@ -130,10 +130,11 @@ func GetHost(b []byte) (offset int, length int) {
 }
 
 func GetSNI(b []byte) (offset int, length int) {
-	if b[0] != 0x16 {
+	offset = 11 + 32
+	if offset+1 > len(b) {
 		return 0, 0
 	}
-	if len(b) < 5 {
+	if b[0] != 0x16 {
 		return 0, 0
 	}
 	Version := binary.BigEndian.Uint16(b[1:3])
@@ -144,7 +145,6 @@ func GetSNI(b []byte) (offset int, length int) {
 	if len(b) <= int(Length)-5 {
 		return 0, 0
 	}
-	offset = 11 + 32
 	SessionIDLength := b[offset]
 	offset += 1 + int(SessionIDLength)
 	if offset+2 > len(b) {
