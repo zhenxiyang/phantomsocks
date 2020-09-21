@@ -593,7 +593,10 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 			request = PackRequest(name, qtype, options.ECS)
 			response, err = TLSlookup(request, _server[2])
 		default:
-			return 0, nil
+			index := len(Nose)
+			DNSCache[name] = Answer{index, nil}
+			Nose = append(Nose, name)
+			return index, nil
 		}
 	}
 	if err != nil {

@@ -37,18 +37,23 @@ func IsNormalError(err error) bool {
 	if !ok {
 		return false
 	}
-	errSyscallError, ok := errOpError.Err.(*os.SyscallError)
-	if !ok {
-		return false
-	}
-	errErrno, ok := errSyscallError.Err.(syscall.Errno)
-	if !ok {
-		return false
-	}
-	if errErrno == syscall.ECONNREFUSED ||
-		errErrno == syscall.ECONNRESET {
+	switch e := errOpError.Err.(type) {
+	case *os.SyscallError:
+		errErrno, ok := e.Err.(syscall.Errno)
+		if !ok {
+			return false
+		}
+
+		if errErrno == syscall.ETIMEDOUT ||
+			errErrno == syscall.ECONNREFUSED ||
+			errErrno == syscall.ECONNRESET {
+			return true
+		}
+	default:
+		//logPrintln(2, reflect.TypeOf(e))
 		return true
 	}
+
 	return false
 }
 
@@ -156,6 +161,15 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		}
 		cut := (min_dot + max_dot) / 2
 
+		var tfo_payload []byte = nil
+		if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
+			if (conf.Option & OPT_TFO) != 0 {
+				tfo_payload = b
+			} else {
+				tfo_payload = b[:cut]
+			}
+		}
+
 		if conf.Option&OPT_FAKE != 0 {
 			var connInfo *ConnectionInfo
 			for i := 0; i < 5; i++ {
@@ -167,15 +181,8 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				}
 
 				raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-				if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
-					if (conf.Option & OPT_TFO) != 0 {
-						conn, connInfo, err = DialConnInfo(laddr, raddr, conf, b)
-					} else {
-						conn, connInfo, err = DialConnInfo(laddr, raddr, conf, b[:cut])
-					}
-				} else {
-					conn, connInfo, err = DialConnInfo(laddr, raddr, conf, nil)
-				}
+
+				conn, connInfo, err = DialConnInfo(laddr, raddr, conf, tfo_payload)
 
 				logPrintln(2, ip, port, err)
 				if err != nil {
@@ -361,26 +368,22 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 			}
 
 			count := 1
-			if conf.Option&OPT_HTFO != 0 {
-				count = 2
-			} else {
-				if conf.Option&OPT_MODE2 == 0 {
-					err = SendFakePacket(connInfo, fakepayload, conf, 1)
-					if err != nil {
-						conn.Close()
-						return nil, err
-					}
-				} else {
-					connInfo.TCP.Seq += uint32(cut)
-					fakepayload = fakepayload[cut:]
-					count = 2
-				}
-
-				_, err = conn.Write(b[:cut])
+			if conf.Option&OPT_MODE2 == 0 {
+				err = SendFakePacket(connInfo, fakepayload, conf, 1)
 				if err != nil {
 					conn.Close()
 					return nil, err
 				}
+			} else {
+				connInfo.TCP.Seq += uint32(cut)
+				fakepayload = fakepayload[cut:]
+				count = 2
+			}
+
+			_, err = conn.Write(b[:cut])
+			if err != nil {
+				conn.Close()
+				return nil, err
 			}
 
 			err = SendFakePacket(connInfo, fakepayload, conf, count)
