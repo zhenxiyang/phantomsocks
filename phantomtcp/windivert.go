@@ -50,6 +50,9 @@ func connectionMonitor(synack bool, layer uint8) {
 			logPrintln(1, err)
 			continue
 		}
+
+		winDivert.Send(divertpacket)
+
 		ipv6 := divertpacket.Raw[0]>>4 == 6
 		var packet gopacket.Packet
 		if ipv6 {
@@ -144,9 +147,15 @@ func connectionMonitor(synack bool, layer uint8) {
 	}
 }
 
-func ConnectionMonitor(devices []string, synack bool) {
-	connectionMonitor(synack, 0)
-	connectionMonitor(synack, 1)
+func ConnectionMonitor(devices []string, synack bool) bool {
+	ConnSyn = make(map[string]int, 65536)
+	for i := 0; i < 65536; i++ {
+		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
+		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
+	}
+
+	go connectionMonitor(synack, 0)
+	return true
 }
 
 func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, count int) error {

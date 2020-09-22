@@ -167,13 +167,14 @@ func main() {
 
 	flag.Parse()
 
-	if *device == "" {
-		ptcp.DevicePrint()
+	devices := strings.Split(*device, ",")
+	if !ptcp.ConnectionMonitor(devices, *synack) {
 		return
 	}
 
 	ptcp.LogLevel = *logLevel
 	ptcp.Init()
+
 	for _, filename := range strings.Split(*configFiles, ",") {
 		err := ptcp.LoadConfig(filename)
 		if err != nil {
@@ -200,9 +201,6 @@ func main() {
 			allowlist[c] = true
 		}
 	}
-
-	devices := strings.Split(*device, ",")
-	ptcp.ConnectionMonitor(devices, *synack)
 
 	if *socksListenAddr != "" {
 		fmt.Println("Socks:", *socksListenAddr)
@@ -245,7 +243,7 @@ func main() {
 	s := <-c
 	fmt.Println(s)
 
-	if *socksListenAddr != "" {
+	if *systemProxy != "" {
 		for _, dev := range devices {
 			err := proxy.SetProxy(dev, *systemProxy, false)
 			if err != nil {

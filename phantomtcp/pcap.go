@@ -187,7 +187,12 @@ func connectionMonitor(device string, synack bool) {
 	}
 }
 
-func ConnectionMonitor(devices []string, synack bool) {
+func ConnectionMonitor(devices []string, synack bool) bool {
+	if devices == nil {
+		DevicePrint()
+		return false
+	}
+
 	ConnSyn = make(map[string]int, 65536)
 	for i := 0; i < 65536; i++ {
 		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
@@ -197,6 +202,8 @@ func ConnectionMonitor(devices []string, synack bool) {
 	for i := 0; i < len(devices); i++ {
 		go connectionMonitor(devices[i], synack)
 	}
+
+	return true
 }
 
 func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, count int) error {
