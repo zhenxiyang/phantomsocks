@@ -146,16 +146,9 @@ func ConnectionMonitor(devices []string, synack bool) bool {
 		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
 	}
 
-	if len(devices) == 1 {
-		go connectionMonitor(devices[0], true)
-		connectionMonitor(devices[0], false)
-	} else {
-		for i := 1; i < len(devices); i++ {
-			go connectionMonitor(devices[i], true)
-			go connectionMonitor(devices[i], false)
-		}
-		go connectionMonitor(devices[0], true)
-		connectionMonitor(devices[0], false)
+	for i := 0; i < len(devices); i++ {
+		go connectionMonitor(devices[i], true)
+		go connectionMonitor(devices[i], false)
 	}
 
 	return true
@@ -179,6 +172,10 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 		tcpLayer.Options = []layers.TCPOption{
 			layers.TCPOption{19, 18, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
 		}
+	} else if config.Option&OPT_WTIME != 0 {
+		tcpLayer.Options = []layers.TCPOption{
+			layers.TCPOption{8, 10, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
+		}
 	}
 
 	if config.Option&OPT_NACK != 0 {
@@ -195,6 +192,14 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 
 	if config.Option&OPT_WCSUM == 0 {
 		options.ComputeChecksums = true
+	}
+
+	if config.Option&OPT_WSEQ != 0 {
+		tcpLayer.Seq -= 1
+		fakepayload := make([]byte, len(payload)+1)
+		fakepayload[0] = 0xFF
+		copy(fakepayload[1:], payload)
+		payload = fakepayload
 	}
 
 	tcpLayer.SetNetworkLayerForChecksum(ipLayer)
