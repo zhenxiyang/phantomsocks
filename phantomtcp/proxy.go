@@ -471,13 +471,6 @@ func Proxy(client net.Conn) {
 		config, ok := ConfigLookup(host)
 
 		if ok {
-			var b [1500]byte
-			n, err := client.Read(b[:])
-			if err != nil {
-				log.Println(err)
-				return
-			}
-
 			var ips []net.IP
 			if config.Option&OPT_IPV6 != 0 {
 				_, ips = NSLookup(host, 28, config.Server)
@@ -489,43 +482,54 @@ func Proxy(client net.Conn) {
 				return
 			}
 
-			if b[0] == 0x16 {
-				offset, length := GetSNI(b[:n])
-				var conf *Config = nil
-				if length > 0 {
-					host = string(b[offset : offset+length])
-					config, ok = ConfigLookup(host)
-					conf = &config
-				}
-
-				logPrintln(1, "Proxy:", host, port, config)
-
-				conn, err = Dial(ips, port, b[:n], conf)
-				if err != nil {
-					logPrintln(1, host, err)
-					return
-				}
+			if config.Option == 0 {
+				conn, err = Dial(ips, port, nil, nil)
 			} else {
-				logPrintln(1, "Proxy:", host, port, config)
-				if config.Option&OPT_HTTPS != 0 {
-					HttpMove(client, "https", b[:n])
+				var b [1500]byte
+				n, err := client.Read(b[:])
+				if err != nil {
+					log.Println(err)
 					return
-				} else if config.Option&OPT_STRIP != 0 {
-					ip := ips[rand.Intn(len(ips))]
-					conn, err = DialStrip(ip.String(), "")
+				}
+
+				if b[0] == 0x16 {
+					offset, length := GetSNI(b[:n])
+					var conf *Config = nil
+					if length > 0 {
+						host = string(b[offset : offset+length])
+						config, ok = ConfigLookup(host)
+						conf = &config
+					}
+
+					logPrintln(1, "Proxy:", host, port, config)
+
+					conn, err = Dial(ips, port, b[:n], conf)
 					if err != nil {
-						logPrintln(1, err)
+						logPrintln(1, host, err)
 						return
 					}
-					_, err = conn.Write(b[:n])
 				} else {
-					conn, err = HTTP(client, ips, port, b[:n], &config)
-					if err != nil {
-						logPrintln(1, err)
+					logPrintln(1, "Proxy:", host, port, config)
+					if config.Option&OPT_HTTPS != 0 {
+						HttpMove(client, "https", b[:n])
+						return
+					} else if config.Option&OPT_STRIP != 0 {
+						ip := ips[rand.Intn(len(ips))]
+						conn, err = DialStrip(ip.String(), "")
+						if err != nil {
+							logPrintln(1, err)
+							return
+						}
+						_, err = conn.Write(b[:n])
+					} else {
+						conn, err = HTTP(client, ips, port, b[:n], &config)
+						if err != nil {
+							logPrintln(1, err)
+							return
+						}
+						io.Copy(client, conn)
 						return
 					}
-					io.Copy(client, conn)
-					return
 				}
 			}
 		} else {

@@ -117,15 +117,16 @@ func ConfigLookup(name string) (Config, bool) {
 }
 
 func GetHost(b []byte) (offset int, length int) {
-	header := string(b)
-	offset = strings.Index(header, "Host: ") + 6
+	offset = bytes.Index(b, []byte("Host: "))
 	if offset == -1 {
 		return 0, 0
 	}
-	length = strings.Index(header[offset:], "\r\n")
+	offset += 6
+	length = bytes.Index(b[offset:], []byte("\r\n"))
 	if length == -1 {
 		return 0, 0
 	}
+
 	return
 }
 
@@ -182,20 +183,6 @@ func GetSNI(b []byte) (offset int, length int) {
 		}
 	}
 	return 0, 0
-}
-
-func getHost(b []byte) (offset int, length int) {
-	offset = bytes.Index(b, []byte("Host: "))
-	if offset == -1 {
-		return 0, 0
-	}
-	offset += 6
-	length = bytes.Index(b[offset:], []byte("\r\n"))
-	if offset == -1 {
-		return 0, 0
-	}
-
-	return
 }
 
 func HttpMove(conn net.Conn, host string, b []byte) bool {
