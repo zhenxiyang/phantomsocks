@@ -186,21 +186,23 @@ func connectionMonitor(device string, synack bool) {
 	}
 }
 
-func ConnectionMonitor(devices []string, synack bool) {
+func ConnectionMonitor(devices []string, synack bool) bool {
+	if devices == nil {
+		DevicePrint()
+		return false
+	}
+
 	ConnSyn = make(map[string]int, 65536)
 	for i := 0; i < 65536; i++ {
 		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
 		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
 	}
 
-	if len(devices) == 1 {
-		connectionMonitor(devices[0], synack)
-	} else {
-		for i := 1; i < len(devices); i++ {
-			go connectionMonitor(devices[i], synack)
-		}
-		connectionMonitor(devices[0], synack)
+	for i := 0; i < len(devices); i++ {
+		go connectionMonitor(devices[i], synack)
 	}
+
+	return true
 }
 
 func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, count int) error {
@@ -221,6 +223,10 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 	if config.Option&OPT_WMD5 != 0 {
 		tcpLayer.Options = []layers.TCPOption{
 			layers.TCPOption{19, 18, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+		}
+	} else if config.Option&OPT_WTIME != 0 {
+		tcpLayer.Options = []layers.TCPOption{
+			layers.TCPOption{8, 10, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
 		}
 	}
 
