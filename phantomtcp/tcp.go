@@ -57,18 +57,21 @@ func IsNormalError(err error) bool {
 	return false
 }
 
-func AddConn(synAddr string) {
+func AddConn(synAddr string, option uint32) {
 	SynLock.Lock()
-	ConnSyn[synAddr]++
+	info, _ := ConnSyn[synAddr]
+	info.Number++
+	info.Option = option
+	ConnSyn[synAddr] = info
 	SynLock.Unlock()
 }
 
 func DelConn(synAddr string) {
 	SynLock.Lock()
-	synCount, _ := ConnSyn[synAddr]
-	synCount--
-	if synCount != 0 {
-		ConnSyn[synAddr] = synCount
+	info, _ := ConnSyn[synAddr]
+	info.Number--
+	if info.Number != 0 {
+		ConnSyn[synAddr] = info
 	} else {
 		delete(ConnSyn, synAddr)
 	}

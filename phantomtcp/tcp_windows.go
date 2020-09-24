@@ -8,8 +8,9 @@ import (
 func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.Conn, *ConnectionInfo, error) {
 	addr := raddr.String()
 
-	AddConn(addr)
-	d := net.Dialer{Timeout: time.Second, LocalAddr: laddr}
+	AddConn(addr, conf.Option)
+	timeout := time.Millisecond * 1500
+	d := net.Dialer{Timeout: timeout, LocalAddr: laddr}
 	conn, err := d.Dial("tcp", addr)
 	if err != nil {
 		DelConn(raddr.String())

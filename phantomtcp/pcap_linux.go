@@ -9,6 +9,67 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+func SendPacket(packet gopacket.Packet) error {
+	switch link := packet.LinkLayer().(type) {
+	case *layers.Ethernet:
+		err := pcapHandle.WritePacketData(packet.Data())
+		return err
+	default:
+		payload := link.LayerPayload()
+
+		var sa syscall.Sockaddr
+		var lsa syscall.Sockaddr
+		var domain int
+
+		switch ip := packet.NetworkLayer().(type) {
+		case *layers.IPv4:
+			var addr [4]byte
+			copy(addr[:4], ip.DstIP.To4()[:4])
+			sa = &syscall.SockaddrInet4{Addr: addr, Port: 0}
+			var laddr [4]byte
+			copy(laddr[:4], ip.SrcIP.To4()[:4])
+			lsa = &syscall.SockaddrInet4{Addr: laddr, Port: 0}
+			domain = syscall.AF_INET
+			if payload[8] == 32 {
+				return nil
+			}
+			payload[8] = 32
+		case *layers.IPv6:
+			var addr [16]byte
+			copy(addr[:16], ip.DstIP[:16])
+			sa = &syscall.SockaddrInet6{Addr: addr, Port: 0}
+			var laddr [16]byte
+			copy(laddr[:16], ip.SrcIP[:16])
+			lsa = &syscall.SockaddrInet6{Addr: laddr, Port: 0}
+			domain = syscall.AF_INET6
+			if payload[7] == 32 {
+				return nil
+			}
+			payload[7] = 32
+		}
+
+		raw_fd, err := syscall.Socket(domain, syscall.SOCK_RAW, syscall.IPPROTO_RAW)
+		if err != nil {
+			syscall.Close(raw_fd)
+			return err
+		}
+		err = syscall.Bind(raw_fd, lsa)
+		if err != nil {
+			syscall.Close(raw_fd)
+			return err
+		}
+
+		err = syscall.Sendto(raw_fd, payload, 0, sa)
+		if err != nil {
+			syscall.Close(raw_fd)
+			return err
+		}
+		syscall.Close(raw_fd)
+	}
+
+	return nil
+}
+
 func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, count int) error {
 	linkLayer := connInfo.Link
 	ipLayer := connInfo.IP

@@ -37,8 +37,13 @@ type ConnectionInfo struct {
 	TCP  layers.TCP
 }
 
+type SynInfo struct {
+	Number uint32
+	Option uint32
+}
+
 var SynLock sync.RWMutex
-var ConnSyn map[string]int
+var ConnSyn map[string]SynInfo
 var ConnInfo4 [65536]chan *ConnectionInfo
 var ConnInfo6 [65536]chan *ConnectionInfo
 
@@ -96,7 +101,7 @@ func connectionMonitor(device string, synack bool) {
 				synAddr = addr.String()
 			}
 			SynLock.RLock()
-			_, ok := ConnSyn[synAddr]
+			info, ok := ConnSyn[synAddr]
 			if ok {
 				if synack {
 					srcIP := ip.DstIP
@@ -110,6 +115,9 @@ func connectionMonitor(device string, synack bool) {
 					tcp.Seq = tcp.Ack
 					tcp.Ack = ack
 				} else {
+					if info.Option&OPT_SYNX2 != 0 {
+						SendPacket(packet)
+					}
 					tcp.Seq++
 				}
 
@@ -145,7 +153,7 @@ func connectionMonitor(device string, synack bool) {
 				synAddr = addr.String()
 			}
 			SynLock.RLock()
-			_, ok := ConnSyn[synAddr]
+			info, ok := ConnSyn[synAddr]
 			if ok {
 				if synack {
 					srcIP := ip.DstIP
@@ -159,6 +167,9 @@ func connectionMonitor(device string, synack bool) {
 					tcp.Seq = tcp.Ack
 					tcp.Ack = ack
 				} else {
+					if info.Option&OPT_SYNX2 != 0 {
+						SendPacket(packet)
+					}
 					tcp.Seq++
 				}
 
@@ -191,7 +202,7 @@ func ConnectionMonitor(devices []string, synack bool) bool {
 		return false
 	}
 
-	ConnSyn = make(map[string]int, 65536)
+	ConnSyn = make(map[string]SynInfo, 128)
 	for i := 0; i < 65536; i++ {
 		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
 		ConnInfo6[i] = make(chan *ConnectionInfo, 1)

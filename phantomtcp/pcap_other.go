@@ -10,6 +10,11 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+func SendPacket(packet gopacket.Packet) error {
+	err := pcapHandle.WritePacketData(packet.Data())
+	return err
+}
+
 func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, count int) error {
 	linkLayer := connInfo.Link
 	ipLayer := connInfo.IP

@@ -50,6 +50,7 @@ const (
 	OPT_TFO       = 0x1 << 9
 	OPT_HTFO      = 0x1 << 10
 	OPT_KEEPALIVE = 0x1 << 11
+	OPT_SYNX2     = 0x1 << 12
 
 	OPT_HTTPS = 0x1 << 16
 	OPT_STRIP = 0x1 << 17
@@ -76,6 +77,7 @@ var MethodMap = map[string]uint32{
 	"tfo":        OPT_TFO,
 	"half-tfo":   OPT_HTFO,
 	"keep-alive": OPT_KEEPALIVE,
+	"synx2":      OPT_SYNX2,
 
 	"https": OPT_HTTPS,
 	"strip": OPT_STRIP,

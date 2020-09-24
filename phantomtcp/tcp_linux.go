@@ -11,9 +11,10 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 	var err error
 
 	addr := raddr.String()
-	AddConn(addr)
+	AddConn(addr, conf.Option)
+	timeout := time.Millisecond * 1500
 	if (conf.Option & (OPT_MSS | OPT_TFO | OPT_HTFO | OPT_KEEPALIVE)) != 0 {
-		d := net.Dialer{Timeout: time.Second, LocalAddr: laddr,
+		d := net.Dialer{Timeout: timeout, LocalAddr: laddr,
 			Control: func(network, address string, c syscall.RawConn) error {
 				err := c.Control(func(fd uintptr) {
 					if (conf.Option & OPT_MSS) != 0 {
@@ -35,7 +36,7 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 		}
 	} else {
 		//	conn, err = net.DialTCP("tcp", laddr, raddr)
-		d := net.Dialer{Timeout: time.Second, LocalAddr: laddr}
+		d := net.Dialer{Timeout: timeout, LocalAddr: laddr}
 		conn, err = d.Dial("tcp", addr)
 	}
 

@@ -22,8 +22,13 @@ type ConnectionInfo struct {
 	TCP  layers.TCP
 }
 
+type ConnSynInfo struct {
+	Number uint32
+	Option uint32
+}
+
 var SynLock sync.Mutex
-var ConnSyn map[string]int
+var ConnSyn map[string]ConnSynInfo
 var ConnInfo4 [65536]chan *ConnectionInfo
 var ConnInfo6 [65536]chan *ConnectionInfo
 
@@ -140,7 +145,7 @@ func ConnectionMonitor(devices []string, synack bool) bool {
 		return false
 	}
 
-	ConnSyn = make(map[string]int, 65536)
+	ConnSyn = make(map[string]ConnSynInfo, 128)
 	for i := 0; i < 65536; i++ {
 		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
 		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
