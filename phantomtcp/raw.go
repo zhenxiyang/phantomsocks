@@ -6,8 +6,8 @@ package phantomtcp
 import (
 	"fmt"
 	"net"
-	"sync"
 	"syscall"
+	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -15,22 +15,6 @@ import (
 
 func DevicePrint() {
 }
-
-type ConnectionInfo struct {
-	Link gopacket.LinkLayer
-	IP   gopacket.NetworkLayer
-	TCP  layers.TCP
-}
-
-type ConnSynInfo struct {
-	Number uint32
-	Option uint32
-}
-
-var SynLock sync.Mutex
-var ConnSyn map[string]ConnSynInfo
-var ConnInfo4 [65536]chan *ConnectionInfo
-var ConnInfo6 [65536]chan *ConnectionInfo
 
 func connectionMonitor(device string, ipv6 bool) {
 	fmt.Printf("Device: %v\n", device)
@@ -74,8 +58,7 @@ func connectionMonitor(device string, ipv6 bool) {
 		}
 		srcPort := tcp.DstPort
 		synAddr := addr.String()
-		SynLock.Lock()
-		_, ok := ConnSyn[synAddr]
+		_, ok := ConnSyn.Load(synAddr)
 		if ok {
 			if ipv6 {
 				var ip layers.IPv6
@@ -96,12 +79,14 @@ func connectionMonitor(device string, ipv6 bool) {
 				tcp.Ack = ack
 
 				ch := ConnInfo6[srcPort]
-				select {
-				case <-ch:
-				default:
-				}
+				connInfo := ConnectionInfo{nil, &ip, tcp}
+				go func(info *ConnectionInfo) {
+					select {
+					case ch <- info:
+					case <-time.After(time.Second * 2):
+					}
+				}(&connInfo)
 
-				ConnInfo4[srcPort] <- &ConnectionInfo{nil, &ip, tcp}
 				buf = make([]byte, 1500)
 			} else {
 				var ip layers.IPv4
@@ -127,15 +112,17 @@ func connectionMonitor(device string, ipv6 bool) {
 				tcp.Ack = ack
 
 				ch := ConnInfo4[srcPort]
-				select {
-				case <-ch:
-				default:
-				}
-				ch <- &ConnectionInfo{nil, &ip, tcp}
+				connInfo := ConnectionInfo{nil, &ip, tcp}
+				go func(info *ConnectionInfo) {
+					select {
+					case ch <- info:
+					case <-time.After(time.Second * 2):
+					}
+				}(&connInfo)
+
 				buf = make([]byte, 1500)
 			}
 		}
-		SynLock.Unlock()
 	}
 }
 
@@ -145,10 +132,9 @@ func ConnectionMonitor(devices []string, synack bool) bool {
 		return false
 	}
 
-	ConnSyn = make(map[string]ConnSynInfo, 128)
 	for i := 0; i < 65536; i++ {
-		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
-		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
+		ConnInfo4[i] = make(chan *ConnectionInfo)
+		ConnInfo6[i] = make(chan *ConnectionInfo)
 	}
 
 	for i := 0; i < len(devices); i++ {

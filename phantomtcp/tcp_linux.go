@@ -35,7 +35,6 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 			_, err = conn.Write(payload)
 		}
 	} else {
-		//	conn, err = net.DialTCP("tcp", laddr, raddr)
 		d := net.Dialer{Timeout: timeout, LocalAddr: laddr}
 		conn, err = d.Dial("tcp", addr)
 	}

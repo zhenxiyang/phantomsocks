@@ -6,28 +6,17 @@ package phantomtcp
 import (
 	"fmt"
 	"net"
-	"sync"
+	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/macronut/godivert"
 )
 
+var winDivert *godivert.WinDivertHandle
+
 func DevicePrint() {
 }
-
-type ConnectionInfo struct {
-	Link gopacket.LinkLayer
-	IP   gopacket.NetworkLayer
-	TCP  layers.TCP
-}
-
-var SynLock sync.RWMutex
-var ConnSyn map[string]int
-var ConnInfo4 [65536]chan *ConnectionInfo
-var ConnInfo6 [65536]chan *ConnectionInfo
-
-var winDivert *godivert.WinDivertHandle
 
 func connectionMonitor(synack bool, layer uint8) {
 	var filter string
@@ -78,9 +67,9 @@ func connectionMonitor(synack bool, layer uint8) {
 				addr := net.TCPAddr{IP: ip.DstIP, Port: int(tcp.DstPort)}
 				synAddr = addr.String()
 			}
-			SynLock.RLock()
-			_, ok := ConnSyn[synAddr]
+			result, ok := ConnSyn.Load(synAddr)
 			if ok {
+				info := result.(SynInfo)
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -93,18 +82,21 @@ func connectionMonitor(synack bool, layer uint8) {
 					tcp.Seq = tcp.Ack
 					tcp.Ack = ack
 				} else {
+					if info.Option&OPT_SYNX2 != 0 {
+						SendPacket(packet)
+					}
 					tcp.Seq++
 				}
 
 				ch := ConnInfo4[srcPort]
-				select {
-				case <-ch:
-				default:
-				}
-
-				ch <- &ConnectionInfo{nil, ip, *tcp}
+				connInfo := ConnectionInfo{nil, ip, *tcp}
+				go func(info *ConnectionInfo) {
+					select {
+					case ch <- info:
+					case <-time.After(time.Second * 2):
+					}
+				}(&connInfo)
 			}
-			SynLock.RUnlock()
 		case *layers.IPv6:
 			var srcPort layers.TCPPort
 			var synAddr string
@@ -117,9 +109,9 @@ func connectionMonitor(synack bool, layer uint8) {
 				addr := net.TCPAddr{IP: ip.DstIP, Port: int(tcp.DstPort)}
 				synAddr = addr.String()
 			}
-			SynLock.RLock()
-			_, ok := ConnSyn[synAddr]
+			result, ok := ConnSyn.Load(synAddr)
 			if ok {
+				info := result.(SynInfo)
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -132,24 +124,26 @@ func connectionMonitor(synack bool, layer uint8) {
 					tcp.Seq = tcp.Ack
 					tcp.Ack = ack
 				} else {
+					if info.Option&OPT_SYNX2 != 0 {
+						SendPacket(packet)
+					}
 					tcp.Seq++
 				}
 
 				ch := ConnInfo6[srcPort]
-				select {
-				case <-ch:
-				default:
-				}
-
-				ch <- &ConnectionInfo{nil, ip, *tcp}
+				connInfo := ConnectionInfo{nil, ip, *tcp}
+				go func(info *ConnectionInfo) {
+					select {
+					case ch <- info:
+					case <-time.After(time.Second * 2):
+					}
+				}(&connInfo)
 			}
-			SynLock.RUnlock()
 		}
 	}
 }
 
 func ConnectionMonitor(devices []string, synack bool) bool {
-	ConnSyn = make(map[string]int, 65536)
 	for i := 0; i < 65536; i++ {
 		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
 		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
@@ -157,6 +151,20 @@ func ConnectionMonitor(devices []string, synack bool) bool {
 
 	go connectionMonitor(synack, 0)
 	return true
+}
+
+func SendPacket(packet gopacket.Packet) error {
+	payload := packet.LinkLayer().LayerPayload()
+
+	var divertAddr godivert.WinDivertAddress
+	var divertpacket godivert.Packet
+	divertpacket.Raw = payload
+	divertpacket.PacketLen = uint(len(divertpacket.Raw))
+	divertpacket.Addr = &divertAddr
+	divertpacket.ParseHeaders()
+
+	_, err := winDivert.Send(&divertpacket)
+	return err
 }
 
 func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, count int) error {

@@ -1,5 +1,6 @@
 // +build !linux
 // +build !linux !mipsle
+//// +build !windows
 
 package phantomtcp
 

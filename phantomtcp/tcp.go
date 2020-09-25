@@ -6,9 +6,28 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"sync"
 	"syscall"
 	"time"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 )
+
+type ConnectionInfo struct {
+	Link gopacket.LinkLayer
+	IP   gopacket.NetworkLayer
+	TCP  layers.TCP
+}
+
+type SynInfo struct {
+	Number uint32
+	Option uint32
+}
+
+var ConnSyn sync.Map
+var ConnInfo4 [65536]chan *ConnectionInfo
+var ConnInfo6 [65536]chan *ConnectionInfo
 
 const domainBytes = "abcdefghijklmnopqrstuvwxyz0123456789-"
 
@@ -58,24 +77,26 @@ func IsNormalError(err error) bool {
 }
 
 func AddConn(synAddr string, option uint32) {
-	SynLock.Lock()
-	info, _ := ConnSyn[synAddr]
-	info.Number++
-	info.Option = option
-	ConnSyn[synAddr] = info
-	SynLock.Unlock()
+	result, ok := ConnSyn.LoadOrStore(synAddr, SynInfo{1, option})
+	if ok {
+		info := result.(SynInfo)
+		info.Number++
+		info.Option = option
+		ConnSyn.Store(synAddr, info)
+	}
 }
 
 func DelConn(synAddr string) {
-	SynLock.Lock()
-	info, _ := ConnSyn[synAddr]
-	info.Number--
-	if info.Number != 0 {
-		ConnSyn[synAddr] = info
-	} else {
-		delete(ConnSyn, synAddr)
+	result, ok := ConnSyn.Load(synAddr)
+	if ok {
+		info := result.(SynInfo)
+		if info.Number > 1 {
+			info.Number--
+			ConnSyn.Store(synAddr, info)
+		} else {
+			ConnSyn.Delete(synAddr)
+		}
 	}
-	SynLock.Unlock()
 }
 
 func GetLocalAddr(name string, ipv6 bool) (*net.TCPAddr, error) {

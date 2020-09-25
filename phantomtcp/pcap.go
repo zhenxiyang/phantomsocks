@@ -1,4 +1,5 @@
 // +build !linux !mipsle
+//// +build !windows
 
 package phantomtcp
 
@@ -6,12 +7,14 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"sync"
+	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 )
+
+var pcapHandle *pcap.Handle
 
 func DevicePrint() {
 	devices, err := pcap.FindAllDevs()
@@ -30,24 +33,6 @@ func DevicePrint() {
 		}
 	}
 }
-
-type ConnectionInfo struct {
-	Link gopacket.LinkLayer
-	IP   gopacket.NetworkLayer
-	TCP  layers.TCP
-}
-
-type SynInfo struct {
-	Number uint32
-	Option uint32
-}
-
-var SynLock sync.RWMutex
-var ConnSyn map[string]SynInfo
-var ConnInfo4 [65536]chan *ConnectionInfo
-var ConnInfo6 [65536]chan *ConnectionInfo
-
-var pcapHandle *pcap.Handle
 
 func connectionMonitor(device string, synack bool) {
 	fmt.Printf("Device: %v\n", device)
@@ -100,9 +85,9 @@ func connectionMonitor(device string, synack bool) {
 				addr := net.TCPAddr{IP: ip.DstIP, Port: int(tcp.DstPort)}
 				synAddr = addr.String()
 			}
-			SynLock.RLock()
-			info, ok := ConnSyn[synAddr]
+			result, ok := ConnSyn.Load(synAddr)
 			if ok {
+				info := result.(SynInfo)
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -122,11 +107,7 @@ func connectionMonitor(device string, synack bool) {
 				}
 
 				ch := ConnInfo4[srcPort]
-				select {
-				case <-ch:
-				default:
-				}
-
+				var connInfo ConnectionInfo
 				switch link := link.(type) {
 				case *layers.Ethernet:
 					if synack {
@@ -134,12 +115,18 @@ func connectionMonitor(device string, synack bool) {
 						link.DstMAC = link.SrcMAC
 						link.SrcMAC = srcMAC
 					}
-					ch <- &ConnectionInfo{link, ip, *tcp}
+					connInfo = ConnectionInfo{link, ip, *tcp}
 				default:
-					ch <- &ConnectionInfo{nil, ip, *tcp}
+					connInfo = ConnectionInfo{nil, ip, *tcp}
 				}
+
+				go func(info *ConnectionInfo) {
+					select {
+					case ch <- info:
+					case <-time.After(time.Second * 2):
+					}
+				}(&connInfo)
 			}
-			SynLock.RUnlock()
 		case *layers.IPv6:
 			var srcPort layers.TCPPort
 			var synAddr string
@@ -152,9 +139,9 @@ func connectionMonitor(device string, synack bool) {
 				addr := net.TCPAddr{IP: ip.DstIP, Port: int(tcp.DstPort)}
 				synAddr = addr.String()
 			}
-			SynLock.RLock()
-			info, ok := ConnSyn[synAddr]
+			result, ok := ConnSyn.Load(synAddr)
 			if ok {
+				info := result.(SynInfo)
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -174,11 +161,7 @@ func connectionMonitor(device string, synack bool) {
 				}
 
 				ch := ConnInfo6[srcPort]
-				select {
-				case <-ch:
-				default:
-				}
-
+				var connInfo ConnectionInfo
 				switch link := link.(type) {
 				case *layers.Ethernet:
 					if synack {
@@ -186,12 +169,18 @@ func connectionMonitor(device string, synack bool) {
 						link.DstMAC = link.SrcMAC
 						link.SrcMAC = srcMAC
 					}
-					ch <- &ConnectionInfo{link, ip, *tcp}
+					connInfo = ConnectionInfo{link, ip, *tcp}
 				default:
-					ch <- &ConnectionInfo{nil, ip, *tcp}
+					connInfo = ConnectionInfo{nil, ip, *tcp}
 				}
+
+				go func(info *ConnectionInfo) {
+					select {
+					case ch <- info:
+					case <-time.After(time.Second * 2):
+					}
+				}(&connInfo)
 			}
-			SynLock.RUnlock()
 		}
 	}
 }
@@ -202,10 +191,9 @@ func ConnectionMonitor(devices []string, synack bool) bool {
 		return false
 	}
 
-	ConnSyn = make(map[string]SynInfo, 128)
 	for i := 0; i < 65536; i++ {
-		ConnInfo4[i] = make(chan *ConnectionInfo, 1)
-		ConnInfo6[i] = make(chan *ConnectionInfo, 1)
+		ConnInfo4[i] = make(chan *ConnectionInfo)
+		ConnInfo6[i] = make(chan *ConnectionInfo)
 	}
 
 	for i := 0; i < len(devices); i++ {
