@@ -192,93 +192,49 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 			} else {
 				tfo_payload = b[:cut]
 			}
+			tfo_payload[0] = 0xFF
+			tfo_payload[1] = 0xFF
 		}
 
-		if conf.Option&OPT_FAKE != 0 {
-			var connInfo *ConnectionInfo
-			for i := 0; i < 5; i++ {
-				ip := addresses[rand.Intn(len(addresses))]
+		var synpacket *ConnectionInfo
+		for i := 0; i < 5; i++ {
+			ip := addresses[rand.Intn(len(addresses))]
 
-				laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
-				if err != nil {
-					return nil, errors.New("invalid device")
-				}
-
-				raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-
-				conn, connInfo, err = DialConnInfo(laddr, raddr, conf, tfo_payload)
-
-				logPrintln(2, ip, port, err)
-				if err != nil {
-					if IsNormalError(err) {
-						continue
-					}
-					return nil, err
-				}
-
-				break
+			laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
+			if err != nil {
+				return nil, errors.New("invalid device")
 			}
 
-			if connInfo == nil {
-				if conn != nil {
-					conn.Close()
+			raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
+
+			conn, synpacket, err = DialConnInfo(laddr, raddr, conf, tfo_payload)
+
+			logPrintln(2, ip, port, err)
+			if err != nil {
+				if IsNormalError(err) {
+					continue
 				}
-				return nil, errors.New("connection does not exist")
+				return nil, err
 			}
 
-			count := 1
-			if (conf.Option & OPT_TFO) != 0 {
-				if len(connInfo.TCP.Payload) == 0 {
-					conn.Close()
-					return nil, errors.New("invalid tcp fastopen connection")
-				}
-			} else {
-				if conf.Option&OPT_HTFO != 0 {
-					if len(connInfo.TCP.Payload) > 0 {
-						count = 0
-					} else {
-						connInfo.TCP.Seq += uint32(cut)
-						fakepayload = fakepayload[cut:]
-						count = 2
-					}
-				} else {
-					if conf.Option&OPT_SSEG != 0 {
-						_, err = conn.Write(b[:4])
-						if err != nil {
-							conn.Close()
-							return nil, err
-						}
-					}
+			break
+		}
 
-					if conf.Option&OPT_MODE2 != 0 {
-						connInfo.TCP.Seq += uint32(cut)
-						fakepayload = fakepayload[cut:]
-						count = 2
-					} else {
-						err = SendFakePacket(connInfo, fakepayload, conf, count)
-						if err != nil {
-							conn.Close()
-							return nil, err
-						}
-					}
+		if synpacket == nil {
+			if conn != nil {
+				conn.Close()
+			}
+			return nil, errors.New("connection does not exist")
+		}
 
-					if conf.Option&OPT_SSEG != 0 {
-						_, err = conn.Write(b[4:cut])
-					} else {
-						_, err = conn.Write(b[:cut])
-					}
-					if err != nil {
-						conn.Close()
-						return nil, err
-					}
-				}
-
-				err = SendFakePacket(connInfo, fakepayload, conf, count)
-				if err != nil {
-					conn.Close()
-					return nil, err
-				}
-
+		synpacket.TCP.Seq++
+		count := 1
+		if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
+			if len(synpacket.TCP.Payload) == 0 {
+				conn.Close()
+				return nil, errors.New("invalid tcp fastopen connection")
+			}
+			if (conf.Option & OPT_HTFO) != 0 {
 				_, err = conn.Write(b[cut:])
 				if err != nil {
 					conn.Close()
@@ -286,26 +242,49 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				}
 			}
 		} else {
-			ip := addresses[rand.Intn(len(addresses))]
-			laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
-			raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-			if (conf.Option & OPT_HTFO) != 0 {
-				conn, _, err = DialConnInfo(laddr, raddr, conf, nil)
+			if conf.Option&OPT_SSEG != 0 {
+				_, err = conn.Write(b[:4])
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
+			}
+
+			if conf.Option&OPT_MODE2 != 0 {
+				synpacket.TCP.Seq += uint32(cut)
+				fakepayload = fakepayload[cut:]
+				count = 2
 			} else {
-				conn, err = net.DialTCP("tcp", laddr, raddr)
+				err = ModifyAndSendPacket(synpacket, fakepayload, conf.Option, conf.TTL, count)
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
+			}
+
+			if conf.Option&OPT_SSEG != 0 {
+				_, err = conn.Write(b[4:cut])
+			} else {
+				_, err = conn.Write(b[:cut])
 			}
 			if err != nil {
+				conn.Close()
 				return nil, err
 			}
 
-			_, err = conn.Write(b[:4])
-			_, err = conn.Write(b[4:cut])
+			err = ModifyAndSendPacket(synpacket, fakepayload, conf.Option, conf.TTL, count)
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+
 			_, err = conn.Write(b[cut:])
 			if err != nil {
 				conn.Close()
 				return nil, err
 			}
 		}
+
 		return conn, err
 	} else {
 		ip := addresses[rand.Intn(len(addresses))]
@@ -393,7 +372,7 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 
 			count := 1
 			if conf.Option&OPT_MODE2 == 0 {
-				err = SendFakePacket(connInfo, fakepayload, conf, 1)
+				err = ModifyAndSendPacket(connInfo, fakepayload, conf.Option, conf.TTL, 1)
 				if err != nil {
 					conn.Close()
 					return nil, err
@@ -410,7 +389,7 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 				return nil, err
 			}
 
-			err = SendFakePacket(connInfo, fakepayload, conf, count)
+			err = ModifyAndSendPacket(connInfo, fakepayload, conf.Option, conf.TTL, count)
 			if err != nil {
 				conn.Close()
 				return nil, err
@@ -432,7 +411,7 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 						return
 					}
 
-					err = SendFakePacket(connInfo, fakepayload, conf, 2)
+					err = ModifyAndSendPacket(connInfo, fakepayload, conf.Option, conf.TTL, 2)
 					if err != nil {
 						conn.Close()
 						return

@@ -167,7 +167,7 @@ func SendPacket(packet gopacket.Packet) error {
 	return err
 }
 
-func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, count int) error {
+func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32, ttl uint8, count int) error {
 	ipLayer := connInfo.IP
 
 	tcpLayer := &layers.TCP{
@@ -181,16 +181,20 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 		Window:     connInfo.TCP.Window,
 	}
 
-	if config.Option&OPT_WMD5 != 0 {
-		tcpLayer.Options = []layers.TCPOption{
+	if method&OPT_WMD5 != 0 {
+		tcpLayer.Options = append(tcpLayer.Options,
 			layers.TCPOption{19, 18, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+		)
+	} else if method&OPT_WTIME != 0 {
+		tcpLayer.Options = []layers.TCPOption{
+			layers.TCPOption{8, 10, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
 		}
 	}
 
-	if config.Option&OPT_NACK != 0 {
+	if method&OPT_NACK != 0 {
 		tcpLayer.ACK = false
 		tcpLayer.Ack = 0
-	} else if config.Option&OPT_WACK != 0 {
+	} else if method&OPT_WACK != 0 {
 		tcpLayer.Ack += uint32(tcpLayer.Window)
 	}
 
@@ -199,12 +203,12 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 	var options gopacket.SerializeOptions
 	options.FixLengths = true
 
-	if config.Option&OPT_WCSUM == 0 {
+	if method&OPT_WCSUM == 0 {
 		options.ComputeChecksums = true
 	}
 
-	if config.Option&OPT_WSEQ != 0 {
-		tcpLayer.Seq -= 1
+	if method&OPT_WSEQ != 0 {
+		tcpLayer.Seq--
 		fakepayload := make([]byte, len(payload)+1)
 		fakepayload[0] = 0xFF
 		copy(fakepayload[1:], payload)
@@ -215,15 +219,15 @@ func SendFakePacket(connInfo *ConnectionInfo, payload []byte, config *Config, co
 
 	switch ip := ipLayer.(type) {
 	case *layers.IPv4:
-		if config.Option&OPT_TTL != 0 {
-			ip.TTL = config.TTL
+		if method&OPT_TTL != 0 {
+			ip.TTL = ttl
 		}
 		gopacket.SerializeLayers(buffer, options,
 			ip, tcpLayer, gopacket.Payload(payload),
 		)
 	case *layers.IPv6:
-		if config.Option&OPT_TTL != 0 {
-			ip.HopLimit = config.TTL
+		if method&OPT_TTL != 0 {
+			ip.HopLimit = ttl
 		}
 		gopacket.SerializeLayers(buffer, options,
 			ip, tcpLayer, gopacket.Payload(payload),

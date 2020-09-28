@@ -88,6 +88,7 @@ func connectionMonitor(device string, synack bool) {
 			result, ok := ConnSyn.Load(synAddr)
 			if ok {
 				info := result.(SynInfo)
+
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -97,17 +98,12 @@ func connectionMonitor(device string, synack bool) {
 					tcp.DstPort = tcp.SrcPort
 					tcp.SrcPort = srcPort
 					ack := tcp.Seq + 1
-					tcp.Seq = tcp.Ack
+					tcp.Seq = tcp.Ack - 1
 					tcp.Ack = ack
-				} else {
-					if info.Option&OPT_SYNX2 != 0 {
-						SendPacket(packet)
-					}
-					tcp.Seq++
 				}
 
 				ch := ConnInfo4[srcPort]
-				var connInfo ConnectionInfo
+				var connInfo *ConnectionInfo
 				switch link := link.(type) {
 				case *layers.Ethernet:
 					if synack {
@@ -115,9 +111,26 @@ func connectionMonitor(device string, synack bool) {
 						link.DstMAC = link.SrcMAC
 						link.SrcMAC = srcMAC
 					}
-					connInfo = ConnectionInfo{link, ip, *tcp}
+					connInfo = &ConnectionInfo{link, ip, *tcp}
 				default:
-					connInfo = ConnectionInfo{nil, ip, *tcp}
+					connInfo = &ConnectionInfo{nil, ip, *tcp}
+				}
+
+				if !synack {
+					if info.Option&(OPT_TFO|OPT_HTFO) != 0 {
+						if tcp.Payload == nil && ip.TTL < 32 {
+							connInfo = nil
+							continue
+						}
+						ip.TTL = 64
+						ip.TOS = 0
+						payload := tcp.Payload
+						payload[0] = 0x16
+						payload[1] = 0x03
+						ModifyAndSendPacket(connInfo, tcp.Payload, OPT_TFO, 0, 1)
+					} else if info.Option&OPT_SYNX2 != 0 {
+						SendPacket(packet)
+					}
 				}
 
 				go func(info *ConnectionInfo) {
@@ -125,7 +138,7 @@ func connectionMonitor(device string, synack bool) {
 					case ch <- info:
 					case <-time.After(time.Second * 2):
 					}
-				}(&connInfo)
+				}(connInfo)
 			}
 		case *layers.IPv6:
 			var srcPort layers.TCPPort
@@ -151,17 +164,12 @@ func connectionMonitor(device string, synack bool) {
 					tcp.DstPort = tcp.SrcPort
 					tcp.SrcPort = srcPort
 					ack := tcp.Seq + 1
-					tcp.Seq = tcp.Ack
+					tcp.Seq = tcp.Ack - 1
 					tcp.Ack = ack
-				} else {
-					if info.Option&OPT_SYNX2 != 0 {
-						SendPacket(packet)
-					}
-					tcp.Seq++
 				}
 
 				ch := ConnInfo6[srcPort]
-				var connInfo ConnectionInfo
+				var connInfo *ConnectionInfo
 				switch link := link.(type) {
 				case *layers.Ethernet:
 					if synack {
@@ -169,9 +177,26 @@ func connectionMonitor(device string, synack bool) {
 						link.DstMAC = link.SrcMAC
 						link.SrcMAC = srcMAC
 					}
-					connInfo = ConnectionInfo{link, ip, *tcp}
+					connInfo = &ConnectionInfo{link, ip, *tcp}
 				default:
-					connInfo = ConnectionInfo{nil, ip, *tcp}
+					connInfo = &ConnectionInfo{nil, ip, *tcp}
+				}
+
+				if !synack {
+					if info.Option&(OPT_TFO|OPT_HTFO) != 0 {
+						if tcp.Payload == nil && ip.HopLimit < 32 {
+							connInfo = nil
+							continue
+						}
+						ip.HopLimit = 64
+						ip.TrafficClass = 0
+						payload := tcp.Payload
+						payload[0] = 0x16
+						payload[1] = 0x03
+						ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
+					} else if info.Option&OPT_SYNX2 != 0 {
+						SendPacket(packet)
+					}
 				}
 
 				go func(info *ConnectionInfo) {
@@ -179,7 +204,7 @@ func connectionMonitor(device string, synack bool) {
 					case ch <- info:
 					case <-time.After(time.Second * 2):
 					}
-				}(&connInfo)
+				}(connInfo)
 			}
 		}
 	}

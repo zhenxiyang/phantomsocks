@@ -11,58 +11,80 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 	var err error
 
 	addr := raddr.String()
-	AddConn(addr, conf.Option)
 	timeout := time.Millisecond * 1500
-	if (conf.Option & (OPT_MSS | OPT_TFO | OPT_HTFO | OPT_KEEPALIVE)) != 0 {
-		d := net.Dialer{Timeout: timeout, LocalAddr: laddr,
-			Control: func(network, address string, c syscall.RawConn) error {
-				err := c.Control(func(fd uintptr) {
-					if (conf.Option & OPT_MSS) != 0 {
-						syscall.SetsockoptInt(int(fd),
-							syscall.SOL_TCP, syscall.TCP_MAXSEG, int(conf.MSS))
-					}
-					if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
-						syscall.SetsockoptInt(int(fd), 6, 30, 1)
-					}
-					if (conf.Option & OPT_KEEPALIVE) != 0 {
-						syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1)
-					}
-				})
-				return err
-			}}
-		conn, err = d.Dial("tcp", addr)
-		if err == nil && payload != nil {
-			_, err = conn.Write(payload)
-		}
-	} else {
-		d := net.Dialer{Timeout: timeout, LocalAddr: laddr}
-		conn, err = d.Dial("tcp", addr)
-	}
 
-	if err != nil {
+	for i := 0; i < 2; i++ {
+		AddConn(addr, conf.Option)
+		if (conf.Option & (OPT_MSS | OPT_TFO | OPT_HTFO | OPT_KEEPALIVE)) != 0 {
+			d := net.Dialer{Timeout: timeout, LocalAddr: laddr,
+				Control: func(network, address string, c syscall.RawConn) error {
+					err := c.Control(func(fd uintptr) {
+						if (conf.Option & OPT_MSS) != 0 {
+							syscall.SetsockoptInt(int(fd),
+								syscall.SOL_TCP, syscall.TCP_MAXSEG, int(conf.MSS))
+						}
+						if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
+							syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, 30, 1)
+							syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TOS, 255)
+							syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, int(conf.TTL))
+						}
+						if (conf.Option & OPT_KEEPALIVE) != 0 {
+							syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1)
+						}
+					})
+					return err
+				}}
+			conn, err = d.Dial("tcp", addr)
+
+			if err == nil && payload != nil {
+				_, err = conn.Write(payload)
+			}
+		} else {
+			d := net.Dialer{Timeout: timeout, LocalAddr: laddr}
+			conn, err = d.Dial("tcp", addr)
+		}
+
+		if err != nil {
+			DelConn(raddr.String())
+			return nil, nil, err
+		}
+
+		laddr = conn.LocalAddr().(*net.TCPAddr)
+		ip4 := raddr.IP.To4()
+		var connInfo *ConnectionInfo = nil
+		if ip4 != nil {
+			select {
+			case connInfo = <-ConnInfo4[laddr.Port]:
+			case <-time.After(time.Second):
+			}
+		} else {
+			select {
+			case connInfo = <-ConnInfo6[laddr.Port]:
+			case <-time.After(time.Second):
+			}
+		}
 		DelConn(raddr.String())
-		return nil, nil, err
-	}
-	laddr = conn.LocalAddr().(*net.TCPAddr)
-	ip4 := raddr.IP.To4()
-	if ip4 != nil {
-		select {
-		case connInfo := <-ConnInfo4[laddr.Port]:
-			DelConn(raddr.String())
-			return conn, connInfo, nil
-		case <-time.After(time.Second):
+
+		if payload != nil {
+			if connInfo == nil || connInfo.TCP.Payload == nil {
+				conn.Close()
+				time.Sleep(time.Millisecond * 40)
+				continue
+			}
+			f, err := conn.(*net.TCPConn).File()
+			if err != nil {
+				conn.Close()
+				return nil, nil, err
+			}
+			fd := f.Fd()
+			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TOS, 0)
+			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, 64)
 		}
-	} else {
-		select {
-		case connInfo := <-ConnInfo6[laddr.Port]:
-			DelConn(raddr.String())
-			return conn, connInfo, nil
-		case <-time.After(time.Second):
-		}
+
+		return conn, connInfo, nil
 	}
 
-	DelConn(raddr.String())
-	return conn, nil, nil
+	return nil, nil, nil
 }
 
 const (
