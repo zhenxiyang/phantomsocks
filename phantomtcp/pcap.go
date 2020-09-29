@@ -118,16 +118,19 @@ func connectionMonitor(device string, synack bool) {
 
 				if !synack {
 					if info.Option&(OPT_TFO|OPT_HTFO) != 0 {
-						if tcp.Payload == nil && ip.TTL < 32 {
-							connInfo = nil
-							continue
+						if ip.TOS == 252 {
+							payload := tcp.Payload
+							ip.TTL = 64
+							ip.TOS = 0
+							if len(tcp.Payload) < 2 {
+								ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
+								connInfo = nil
+							} else {
+								payload[0] = 0x16
+								payload[1] = 0x03
+								ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
+							}
 						}
-						ip.TTL = 64
-						ip.TOS = 0
-						payload := tcp.Payload
-						payload[0] = 0x16
-						payload[1] = 0x03
-						ModifyAndSendPacket(connInfo, tcp.Payload, OPT_TFO, 0, 1)
 					} else if info.Option&OPT_SYNX2 != 0 {
 						SendPacket(packet)
 					}
@@ -184,16 +187,19 @@ func connectionMonitor(device string, synack bool) {
 
 				if !synack {
 					if info.Option&(OPT_TFO|OPT_HTFO) != 0 {
-						if tcp.Payload == nil && ip.HopLimit < 32 {
-							connInfo = nil
-							continue
+						if ip.TrafficClass == 63 {
+							payload := tcp.Payload
+							ip.HopLimit = 64
+							ip.TrafficClass = 0
+							if len(payload) < 2 {
+								connInfo = nil
+								ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
+							} else {
+								payload[0] = 0x16
+								payload[1] = 0x03
+								ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
+							}
 						}
-						ip.HopLimit = 64
-						ip.TrafficClass = 0
-						payload := tcp.Payload
-						payload[0] = 0x16
-						payload[1] = 0x03
-						ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
 					} else if info.Option&OPT_SYNX2 != 0 {
 						SendPacket(packet)
 					}

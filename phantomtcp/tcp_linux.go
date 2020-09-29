@@ -25,7 +25,7 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 						}
 						if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
 							syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, 30, 1)
-							syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TOS, 255)
+							syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TOS, 252)
 							syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, int(conf.TTL))
 						}
 						if (conf.Option & OPT_KEEPALIVE) != 0 {
@@ -68,7 +68,7 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 		if payload != nil {
 			if connInfo == nil || connInfo.TCP.Payload == nil {
 				conn.Close()
-				time.Sleep(time.Millisecond * 40)
+				//time.Sleep(time.Millisecond * 40)
 				continue
 			}
 			f, err := conn.(*net.TCPConn).File()
