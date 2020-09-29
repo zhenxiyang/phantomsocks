@@ -16,7 +16,7 @@ import (
 
 var allowlist map[string]bool = nil
 
-func ListenAndServe(listenAddr string, proxy func(net.Conn)) {
+func ListenAndServe(listenAddr string, serve func(net.Conn)) {
 	l, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Panic(err)
@@ -28,12 +28,16 @@ func ListenAndServe(listenAddr string, proxy func(net.Conn)) {
 			if err != nil {
 				log.Panic(err)
 			}
+			err = proxy.SetKeepAlive(client)
+			if err != nil {
+				log.Panic(err)
+			}
 
 			remoteAddr := client.RemoteAddr()
 			remoteTCPAddr, _ := net.ResolveTCPAddr(remoteAddr.Network(), remoteAddr.String())
 			_, ok := allowlist[remoteTCPAddr.IP.String()]
 			if ok {
-				go proxy(client)
+				go serve(client)
 			} else {
 				client.Close()
 			}
@@ -44,8 +48,12 @@ func ListenAndServe(listenAddr string, proxy func(net.Conn)) {
 			if err != nil {
 				log.Panic(err)
 			}
+			err = proxy.SetKeepAlive(client)
+			if err != nil {
+				log.Panic(err)
+			}
 
-			go proxy(client)
+			go serve(client)
 		}
 	}
 }

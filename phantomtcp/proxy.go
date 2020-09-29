@@ -501,7 +501,7 @@ func Proxy(client net.Conn) {
 						conf = &config
 					}
 
-					logPrintln(1, "Proxy:", host, port, config)
+					logPrintln(1, "Proxy:", client.RemoteAddr(), "->", host, port, config)
 
 					conn, err = Dial(ips, port, b[:n], conf)
 					if err != nil {
@@ -509,7 +509,7 @@ func Proxy(client net.Conn) {
 						return
 					}
 				} else {
-					logPrintln(1, "Proxy:", host, port, config)
+					logPrintln(1, "Proxy:", client.RemoteAddr(), "->", host, port, config)
 					if config.Option&OPT_HTTPS != 0 {
 						HttpMove(client, "https", b[:n])
 						return

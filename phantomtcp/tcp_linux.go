@@ -38,6 +38,9 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 
 			if err == nil && payload != nil {
 				_, err = conn.Write(payload)
+				if err != nil {
+					return nil, nil, err
+				}
 			}
 		} else {
 			d := net.Dialer{Timeout: timeout, LocalAddr: laddr}
@@ -68,7 +71,6 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 		if payload != nil {
 			if connInfo == nil || connInfo.TCP.Payload == nil {
 				conn.Close()
-				//time.Sleep(time.Millisecond * 40)
 				continue
 			}
 			f, err := conn.(*net.TCPConn).File()
@@ -76,9 +78,20 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 				conn.Close()
 				return nil, nil, err
 			}
-			fd := f.Fd()
-			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TOS, 0)
-			syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, 64)
+			fd := int(f.Fd())
+			err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TOS, 0)
+			if err != nil {
+				f.Close()
+				conn.Close()
+				return nil, nil, err
+			}
+			err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, 64)
+			if err != nil {
+				f.Close()
+				conn.Close()
+				return nil, nil, err
+			}
+			f.Close()
 		}
 
 		return conn, connInfo, nil
