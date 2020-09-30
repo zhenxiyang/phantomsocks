@@ -166,7 +166,6 @@ var systemProxy = flag.String("proxy", "", "Proxy")
 var dnsListenAddr = flag.String("dns", "", "DNS")
 var device = flag.String("device", "", "Device")
 var logLevel = flag.Int("log", 0, "LogLevel")
-var synack = flag.Bool("synack", false, "SYNACK Mode")
 var clients = flag.String("clients", "", "Clients")
 
 func main() {
@@ -176,7 +175,7 @@ func main() {
 	flag.Parse()
 
 	devices := strings.Split(*device, ",")
-	if !ptcp.ConnectionMonitor(devices, *synack) {
+	if !ptcp.ConnectionMonitor(devices) {
 		return
 	}
 

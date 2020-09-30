@@ -13,18 +13,25 @@ var DNS string = ""
 var DNS64 string = ""
 
 func TCPlookup(request []byte, address string) ([]byte, error) {
-	server, err := net.DialTimeout("tcp", address, time.Second*5)
-	if err != nil {
-		return nil, err
-	}
-	defer server.Close()
 	data := make([]byte, 1024)
 	binary.BigEndian.PutUint16(data[:2], uint16(len(request)))
 	copy(data[2:], request)
 
-	_, err = server.Write(data[:len(request)+2])
-	if err != nil {
-		return nil, err
+	var conn net.Conn
+	var err error
+	if false {
+	} else {
+		conn, err = net.DialTimeout("tcp", address, time.Second*5)
+		if err != nil {
+			return nil, err
+		}
+
+		defer conn.Close()
+
+		_, err = conn.Write(data[:len(request)+2])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	length := 0
@@ -33,7 +40,7 @@ func TCPlookup(request []byte, address string) ([]byte, error) {
 		if recvlen >= 1024 {
 			return nil, nil
 		}
-		n, err := server.Read(data[recvlen:])
+		n, err := conn.Read(data[recvlen:])
 		if err != nil {
 			return nil, err
 		}

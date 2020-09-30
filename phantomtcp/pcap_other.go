@@ -20,31 +20,53 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 	linkLayer := connInfo.Link
 	ipLayer := connInfo.IP
 
-	tcpLayer := &layers.TCP{
-		SrcPort:    connInfo.TCP.SrcPort,
-		DstPort:    connInfo.TCP.DstPort,
-		Seq:        connInfo.TCP.Seq,
-		Ack:        connInfo.TCP.Ack,
-		DataOffset: 5,
-		ACK:        true,
-		PSH:        true,
-		Window:     connInfo.TCP.Window,
-	}
+	var tcpLayer *layers.TCP
+	if method&OPT_TFO != 0 {
+		tcpLayer = &connInfo.TCP
 
-	if method&OPT_WMD5 != 0 {
-		tcpLayer.Options = append(connInfo.TCP.Options,
-			layers.TCPOption{19, 18, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
-		)
-	} else if method&OPT_WTIME != 0 {
-		tcpLayer.Options = []layers.TCPOption{
-			layers.TCPOption{8, 10, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
+		tcpLayer.Seq -= uint32(len(payload))
+		var cookie []byte = nil
+		switch ip := ipLayer.(type) {
+		case *layers.IPv4:
+			result, ok := TFOCookies.Load(ip.DstIP.String())
+			if ok {
+				cookie = result.([]byte)
+			} else {
+				payload = nil
+			}
+		case *layers.IPv6:
+			result, ok := TFOCookies.Load(ip.DstIP.String())
+			if ok {
+				cookie = result.([]byte)
+			} else {
+				payload = nil
+			}
 		}
-	} else if method&OPT_TFO != 0 {
-		tcpLayer.SYN = true
-		tcpLayer.ACK = false
-		tcpLayer.PSH = false
-		tcpLayer.DataOffset = connInfo.TCP.DataOffset
-		tcpLayer.Options = connInfo.TCP.Options
+
+		tcpLayer.Options = append(connInfo.TCP.Options,
+			layers.TCPOption{34, uint8(len(cookie)), cookie},
+		)
+	} else {
+		tcpLayer = &layers.TCP{
+			SrcPort:    connInfo.TCP.SrcPort,
+			DstPort:    connInfo.TCP.DstPort,
+			Seq:        connInfo.TCP.Seq,
+			Ack:        connInfo.TCP.Ack,
+			DataOffset: 5,
+			ACK:        true,
+			PSH:        true,
+			Window:     connInfo.TCP.Window,
+		}
+
+		if method&OPT_WMD5 != 0 {
+			tcpLayer.Options = append(connInfo.TCP.Options,
+				layers.TCPOption{19, 18, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+			)
+		} else if method&OPT_WTIME != 0 {
+			tcpLayer.Options = []layers.TCPOption{
+				layers.TCPOption{8, 8, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
+			}
+		}
 	}
 
 	if method&OPT_NACK != 0 {

@@ -28,6 +28,8 @@ type SynInfo struct {
 var ConnSyn sync.Map
 var ConnInfo4 [65536]chan *ConnectionInfo
 var ConnInfo6 [65536]chan *ConnectionInfo
+var TFOPayload [64][]byte
+var TFOSynID uint8 = 0
 
 const domainBytes = "abcdefghijklmnopqrstuvwxyz0123456789-"
 
@@ -192,8 +194,6 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 			} else {
 				tfo_payload = b[:cut]
 			}
-			tfo_payload[0] = 0xFF
-			tfo_payload[1] = 0xFF
 		}
 
 		var synpacket *ConnectionInfo
@@ -230,10 +230,6 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		synpacket.TCP.Seq++
 		count := 1
 		if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
-			if len(synpacket.TCP.Payload) == 0 {
-				conn.Close()
-				return nil, errors.New("invalid tcp fastopen connection")
-			}
 			if (conf.Option & OPT_HTFO) != 0 {
 				_, err = conn.Write(b[cut:])
 				if err != nil {

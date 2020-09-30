@@ -77,6 +77,29 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 	var tcpLayer *layers.TCP
 	if method&OPT_TFO != 0 {
 		tcpLayer = &connInfo.TCP
+
+		tcpLayer.Seq -= uint32(len(payload))
+		var cookie []byte = nil
+		switch ip := ipLayer.(type) {
+		case *layers.IPv4:
+			result, ok := TFOCookies.Load(ip.DstIP.String())
+			if ok {
+				cookie = result.([]byte)
+			} else {
+				payload = nil
+			}
+		case *layers.IPv6:
+			result, ok := TFOCookies.Load(ip.DstIP.String())
+			if ok {
+				cookie = result.([]byte)
+			} else {
+				payload = nil
+			}
+		}
+
+		tcpLayer.Options = append(connInfo.TCP.Options,
+			layers.TCPOption{34, uint8(len(cookie)), cookie},
+		)
 	} else {
 		tcpLayer = &layers.TCP{
 			SrcPort:    connInfo.TCP.SrcPort,
@@ -95,7 +118,7 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 			)
 		} else if method&OPT_WTIME != 0 {
 			tcpLayer.Options = []layers.TCPOption{
-				layers.TCPOption{8, 10, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
+				layers.TCPOption{8, 8, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
 			}
 		}
 	}

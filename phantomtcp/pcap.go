@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/google/gopacket"
@@ -34,17 +35,16 @@ func DevicePrint() {
 	}
 }
 
-func connectionMonitor(device string, synack bool) {
+var ConnWait4 [65536]uint32
+var ConnWait6 [65536]uint32
+var TFOCookies sync.Map
+
+func connectionMonitor(device string) {
 	fmt.Printf("Device: %v\n", device)
 
 	snapLen := int32(65535)
 
-	var filter string
-	if synack {
-		filter = "(ip6[6]==6 and ip6[53]&18==18) or (tcp[13]&18==18)"
-	} else {
-		filter = "(ip6[6]==6 and ip6[53]&18==2) or (tcp[13]&18==2)"
-	}
+	filter := "(ip6[6]==6 and ip6[53]&2==2) or (tcp[13]&2==2)"
 
 	var err error
 	pcapHandle, err = pcap.OpenLive(device, snapLen, true, pcap.BlockForever)
@@ -71,12 +71,18 @@ func connectionMonitor(device string, synack bool) {
 		link := packet.LinkLayer()
 		ip := packet.NetworkLayer()
 		tcp := packet.TransportLayer().(*layers.TCP)
+		synack := tcp.SYN && tcp.ACK
 
 		switch ip := ip.(type) {
 		case *layers.IPv4:
 			var srcPort layers.TCPPort
 			var synAddr string
+			var method uint32 = 0
 			if synack {
+				method = ConnWait4[tcp.DstPort]
+				if method == 0 {
+					continue
+				}
 				srcPort = tcp.DstPort
 				addr := net.TCPAddr{IP: ip.SrcIP, Port: int(tcp.SrcPort)}
 				synAddr = addr.String()
@@ -84,11 +90,14 @@ func connectionMonitor(device string, synack bool) {
 				srcPort = tcp.SrcPort
 				addr := net.TCPAddr{IP: ip.DstIP, Port: int(tcp.DstPort)}
 				synAddr = addr.String()
+				result, ok := ConnSyn.Load(synAddr)
+				if ok {
+					info := result.(SynInfo)
+					method = info.Option
+				}
 			}
-			result, ok := ConnSyn.Load(synAddr)
-			if ok {
-				info := result.(SynInfo)
 
+			if method != 0 {
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -116,22 +125,40 @@ func connectionMonitor(device string, synack bool) {
 					connInfo = &ConnectionInfo{nil, ip, *tcp}
 				}
 
-				if !synack {
-					if info.Option&(OPT_TFO|OPT_HTFO) != 0 {
-						if ip.TOS == 252 {
-							payload := tcp.Payload
-							ip.TTL = 64
-							ip.TOS = 0
-							if len(tcp.Payload) < 2 {
-								ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
-								connInfo = nil
-							} else {
-								payload[0] = 0x16
-								payload[1] = 0x03
-								ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
+				if method&(OPT_TFO|OPT_HTFO|OPT_SYNX2) != 0 {
+					if synack {
+						if method&(OPT_TFO|OPT_HTFO) != 0 {
+							for _, op := range tcp.Options {
+								if op.OptionType == 34 {
+									TFOCookies.Store(ip.DstIP.String(), op.OptionData)
+								}
 							}
 						}
-					} else if info.Option&OPT_SYNX2 != 0 {
+						ConnWait4[srcPort] = 0
+					} else if method&(OPT_TFO|OPT_HTFO) != 0 {
+						if ip.TTL < 64 {
+							count := 1
+							if method&OPT_SYNX2 != 0 {
+								count = 2
+							}
+
+							ip.TTL = 64
+							if tcp.SYN == true {
+								payload := TFOPayload[ip.TOS>>2]
+								if payload != nil {
+									ip.TOS = 0
+									ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, count)
+									ConnWait4[srcPort] = method
+								} else {
+									connInfo = nil
+								}
+							} else {
+								ip.TOS = 0
+								ModifyAndSendPacket(connInfo, nil, OPT_TFO, 0, count)
+								connInfo = nil
+							}
+						}
+					} else if method&OPT_SYNX2 != 0 {
 						SendPacket(packet)
 					}
 				}
@@ -146,7 +173,12 @@ func connectionMonitor(device string, synack bool) {
 		case *layers.IPv6:
 			var srcPort layers.TCPPort
 			var synAddr string
+			var method uint32 = 0
 			if synack {
+				method = ConnWait6[tcp.DstPort]
+				if method == 0 {
+					continue
+				}
 				srcPort = tcp.DstPort
 				addr := net.TCPAddr{IP: ip.SrcIP, Port: int(tcp.SrcPort)}
 				synAddr = addr.String()
@@ -154,10 +186,13 @@ func connectionMonitor(device string, synack bool) {
 				srcPort = tcp.SrcPort
 				addr := net.TCPAddr{IP: ip.DstIP, Port: int(tcp.DstPort)}
 				synAddr = addr.String()
+				result, ok := ConnSyn.Load(synAddr)
+				if ok {
+					info := result.(SynInfo)
+					method = info.Option
+				}
 			}
-			result, ok := ConnSyn.Load(synAddr)
-			if ok {
-				info := result.(SynInfo)
+			if method != 0 {
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -185,22 +220,40 @@ func connectionMonitor(device string, synack bool) {
 					connInfo = &ConnectionInfo{nil, ip, *tcp}
 				}
 
-				if !synack {
-					if info.Option&(OPT_TFO|OPT_HTFO) != 0 {
-						if ip.TrafficClass == 63 {
-							payload := tcp.Payload
-							ip.HopLimit = 64
-							ip.TrafficClass = 0
-							if len(payload) < 2 {
-								connInfo = nil
-								ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
-							} else {
-								payload[0] = 0x16
-								payload[1] = 0x03
-								ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, 1)
+				if method&(OPT_TFO|OPT_HTFO|OPT_SYNX2) != 0 {
+					if synack {
+						if method&(OPT_TFO|OPT_HTFO) != 0 {
+							for _, op := range tcp.Options {
+								if op.OptionType == 34 {
+									TFOCookies.Store(ip.DstIP.String(), op.OptionData)
+								}
 							}
 						}
-					} else if info.Option&OPT_SYNX2 != 0 {
+						ConnWait6[srcPort] = 0
+					} else if method&(OPT_TFO|OPT_HTFO) != 0 {
+						if ip.HopLimit < 64 {
+							count := 1
+							if method&OPT_SYNX2 != 0 {
+								count = 2
+							}
+
+							ip.HopLimit = 64
+							if tcp.SYN == true {
+								payload := TFOPayload[ip.TrafficClass>>2]
+								if payload != nil {
+									ip.TrafficClass = 0
+									ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, count)
+									ConnWait4[srcPort] = method
+								} else {
+									connInfo = nil
+								}
+							} else {
+								ip.TrafficClass = 0
+								ModifyAndSendPacket(connInfo, nil, OPT_TFO, 0, count)
+								connInfo = nil
+							}
+						}
+					} else if method&OPT_SYNX2 != 0 {
 						SendPacket(packet)
 					}
 				}
@@ -216,7 +269,7 @@ func connectionMonitor(device string, synack bool) {
 	}
 }
 
-func ConnectionMonitor(devices []string, synack bool) bool {
+func ConnectionMonitor(devices []string) bool {
 	if devices == nil {
 		DevicePrint()
 		return false
@@ -228,7 +281,7 @@ func ConnectionMonitor(devices []string, synack bool) bool {
 	}
 
 	for i := 0; i < len(devices); i++ {
-		go connectionMonitor(devices[i], synack)
+		go connectionMonitor(devices[i])
 	}
 
 	return true
