@@ -432,7 +432,7 @@ func SNIProxy(client net.Conn) {
 	io.Copy(conn, client)
 }
 
-func Proxy(client net.Conn) {
+func RedirectProxy(client net.Conn) {
 	defer client.Close()
 
 	var conn net.Conn
@@ -485,11 +485,15 @@ func Proxy(client net.Conn) {
 
 			if config.Option == 0 {
 				conn, err = Dial(ips, port, nil, nil)
+				if err != nil {
+					logPrintln(1, err)
+					return
+				}
 			} else {
 				var b [1500]byte
 				n, err := client.Read(b[:])
 				if err != nil {
-					log.Println(err)
+					logPrintln(1, err)
 					return
 				}
 
@@ -536,6 +540,10 @@ func Proxy(client net.Conn) {
 		} else {
 			return
 		}
+	}
+
+	if conn == nil {
+		return
 	}
 
 	defer conn.Close()

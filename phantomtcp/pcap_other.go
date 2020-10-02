@@ -127,3 +127,9 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 
 	return nil
 }
+
+func Redirect(dst string, to_port int, forward bool) {
+}
+
+func RedirectDNS() {
+}

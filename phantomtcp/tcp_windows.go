@@ -41,7 +41,6 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 
 func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 	LocalAddr := conn.LocalAddr()
-	//LocalTCPAddr, err := net.ResolveTCPAddr(LocalAddr.Network(), LocalAddr.String())
 	LocalTCPAddr := LocalAddr.(*net.TCPAddr)
 
 	if ip4 := LocalTCPAddr.IP.To4(); ip4 != nil {

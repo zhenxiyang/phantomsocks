@@ -229,7 +229,7 @@ func main() {
 
 	if *redirectAddr != "" {
 		fmt.Println("Redirect:", *redirectAddr)
-		go ListenAndServe(*redirectAddr, ptcp.Proxy)
+		go ListenAndServe(*redirectAddr, ptcp.RedirectProxy)
 	}
 
 	if *systemProxy != "" {

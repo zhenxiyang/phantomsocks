@@ -234,9 +234,6 @@ func ConnectionMonitor(devices []string) bool {
 
 	go connectionMonitor(0)
 
-	go RedirectDNS()
-	go Redirect("6.0.0.1-6.0.255.254", 6, false)
-
 	return true
 }
 
@@ -408,15 +405,14 @@ func Redirect(dst string, to_port int, forward bool) {
 		srcIP := packet.SrcIP().To4()
 		dstIP := packet.DstIP().To4()
 
-		//srcPort, _ := packet.SrcPort()
 		dstPort, _ := packet.DstPort()
-		if srcIP[0] == 127 && srcIP[1] == 255 {
+		if srcIP[0] == 127 && srcIP[1] == 255 && dstIP[0] == 127 && dstIP[1] == 0 {
 			packet.SetSrcIP(net.IPv4(6, 0, srcIP[2], srcIP[3]))
 			packet.SetDstIP(localIP)
 			packet.SetSrcPort(uint16(dstIP[2])<<8 | uint16(dstIP[3]))
 		} else {
 			localIP = srcIP.To16()
-			packet.SetSrcIP(net.IPv4(127, 254, byte(dstPort>>8), byte(dstPort&0xFF)))
+			packet.SetSrcIP(net.IPv4(127, 0, byte(dstPort>>8), byte(dstPort&0xFF)))
 			packet.SetDstIP(net.IPv4(127, 255, dstIP[2], dstIP[3]))
 			packet.SetDstPort(uint16(to_port))
 		}
