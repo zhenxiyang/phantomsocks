@@ -1,5 +1,5 @@
 # phantomsocks
-A proxy server for Windows/Linux/macOS with Pcap/RawSocket/WinDivert to modify packets
+A proxy server for Linux/Windows/macOS with Pcap/RawSocket/WinDivert to modify packets
 ## Usage
 ```
 phantomsocks
@@ -26,6 +26,27 @@ phantomsocks
   -proxy string
       Set system proxy
 ```
+### Socks5:
+```
+Linux(pcap&rawsocket):
+sudo ./phantomsocks -device eth0 -socks 0.0.0.0:1080
+
+Windows(pcap&windivert):
+phantomsocks -socks 0.0.0.0:1080
+
+macOS:
+sudo ./phantomsocks -device en0 -socks 127.0.0.1:1080 -proxy socks://127.0.0.1:1080
+```
+### Redirect:
+```
+Linux(pcap&rawsocket):
+iptables -t nat -A OUTPUT -d 6.0.0.0/8 -p tcp -j REDIRECT --to-port 6
+./phantomsocks -device eth0 -redir 0.0.0.0:6
+
+Windows(windivert):
+./phantomsocks -redir 0.0.0.0:6 -proxy redirect://0.0.0.0:6
+```
+
 ## Configure
 ```
   server=*          #Domain below will use this DNS 
