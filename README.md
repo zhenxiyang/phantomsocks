@@ -31,7 +31,7 @@ phantomsocks
 Linux(pcap&rawsocket):
 sudo ./phantomsocks -device eth0 -socks 0.0.0.0:1080
 
-Windows(pcap&windivert):
+Windows(windivert):
 phantomsocks -socks 0.0.0.0:1080
 
 macOS:
