@@ -1,5 +1,5 @@
 // +build !linux !mipsle
-//// +build !windows
+// +build !windows
 
 package phantomtcp
 
@@ -34,10 +34,6 @@ func DevicePrint() {
 		}
 	}
 }
-
-var ConnWait4 [65536]uint32
-var ConnWait6 [65536]uint32
-var TFOCookies sync.Map
 
 func connectionMonitor(device string) {
 	fmt.Printf("Device: %v\n", device)

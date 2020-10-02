@@ -28,6 +28,9 @@ type SynInfo struct {
 var ConnSyn sync.Map
 var ConnInfo4 [65536]chan *ConnectionInfo
 var ConnInfo6 [65536]chan *ConnectionInfo
+var ConnWait4 [65536]uint32
+var ConnWait6 [65536]uint32
+var TFOCookies sync.Map
 var TFOPayload [64][]byte
 var TFOSynID uint8 = 0
 

@@ -40,17 +40,19 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 }
 
 func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
-	file, err := conn.File()
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
 	LocalAddr := conn.LocalAddr()
-	LocalTCPAddr, err := net.ResolveTCPAddr(LocalAddr.Network(), LocalAddr.String())
-	if err != nil {
-		return nil, err
+	//LocalTCPAddr, err := net.ResolveTCPAddr(LocalAddr.Network(), LocalAddr.String())
+	LocalTCPAddr := LocalAddr.(*net.TCPAddr)
+
+	if ip4 := LocalTCPAddr.IP.To4(); ip4 != nil {
+		if ip4[0] == 127 && ip4[1] == 255 {
+			ip4[0] = 6
+			ip4[1] = 0
+			LocalTCPAddr.IP = ip4
+			RemoteTCPAddr := conn.RemoteAddr().(*net.TCPAddr).IP.To4()
+			LocalTCPAddr.Port = int(RemoteTCPAddr[2])<<8 | int(RemoteTCPAddr[3])
+		}
 	}
 
-	return LocalTCPAddr, err
+	return LocalTCPAddr, nil
 }
