@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/gopacket"
@@ -15,6 +16,7 @@ import (
 	"github.com/macronut/godivert"
 )
 
+var winDivertLock sync.Mutex
 var winDivert *godivert.WinDivertHandle
 
 func DevicePrint() {
@@ -24,7 +26,9 @@ func connectionMonitor(layer uint8) {
 	filter := "tcp.Syn"
 
 	var err error
+	winDivertLock.Lock()
 	winDivert, err = godivert.WinDivertOpen(filter, layer, 1, 0)
+	winDivertLock.Unlock()
 	if err != nil {
 		fmt.Printf("winDivert open failed: %v", err)
 		return
@@ -387,7 +391,9 @@ func Redirect(dst string, to_port int, forward bool) {
 		layer = 0
 	}
 
+	winDivertLock.Lock()
 	winDivert, err := godivert.WinDivertOpen(filter, layer, 0, 0)
+	winDivertLock.Unlock()
 	if err != nil {
 		fmt.Printf("winDivert open failed: %v with %s", err, filter)
 		return
@@ -423,7 +429,9 @@ func Redirect(dst string, to_port int, forward bool) {
 }
 
 func RedirectDNS() {
+	winDivertLock.Lock()
 	winDivert, err := godivert.WinDivertOpen("outbound and udp.DstPort=53", 0, 0, 0)
+	winDivertLock.Unlock()
 	if err != nil {
 		fmt.Printf("winDivert open failed: %v", err)
 		return
