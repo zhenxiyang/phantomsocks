@@ -266,7 +266,7 @@ func Init() {
 	DNSCache = make(map[string]Answer)
 }
 
-var Nose []string
+var Nose []string = []string{"phantom.socks"}
 
 func LoadConfig(filename string) error {
 	conf, err := os.Open(filename)
