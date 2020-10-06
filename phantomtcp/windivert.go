@@ -503,6 +503,8 @@ func RedirectDNS() {
 			divertpacket.Raw = buffer.Bytes()
 			divertpacket.PacketLen = uint(len(divertpacket.Raw))
 			divertpacket.ParseHeaders()
+			divertpacket.Addr.Data |= 0x1
+			divertpacket.CalcNewChecksum(winDivert)
 		}
 
 		winDivert.Send(divertpacket)
