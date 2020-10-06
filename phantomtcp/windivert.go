@@ -4,6 +4,7 @@
 package phantomtcp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
@@ -356,6 +357,7 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 	divertpacket.PacketLen = uint(len(divertpacket.Raw))
 	divertpacket.Addr = &divertAddr
 	divertpacket.ParseHeaders()
+	divertpacket.CalcNewChecksum(winDivert)
 
 	for i := 0; i < count; i++ {
 		_, err := winDivert.Send(&divertpacket)
@@ -438,23 +440,29 @@ func RedirectDNS() {
 	}
 	defer winDivert.Close()
 
+	rawbuf := make([]byte, 1500)
 	for {
-		divertpacket, err := winDivert.Recv()
+		packet, err := winDivert.Recv()
 		if err != nil {
 			logPrintln(1, err)
 			continue
 		}
-		ipv6 := divertpacket.Raw[0]>>4 == 6
-		var packet gopacket.Packet
+		ipv6 := packet.Raw[0]>>4 == 6
+
+		var ipheadlen int
 		if ipv6 {
-			packet = gopacket.NewPacket(divertpacket.Raw, layers.LayerTypeIPv6, gopacket.Default)
+			ipheadlen = 40
 		} else {
-			packet = gopacket.NewPacket(divertpacket.Raw, layers.LayerTypeIPv4, gopacket.Default)
+			ipheadlen = int(packet.Raw[0]&0xF) * 4
+		}
+		udpheadlen := 8
+		request := packet.Raw[ipheadlen+udpheadlen:]
+		qname, qtype, _ := GetQName(request)
+		if qname == "" {
+			logPrintln(2, "DNS Segmentation fault")
+			continue
 		}
 
-		request := packet.TransportLayer().LayerPayload()
-
-		qname, qtype, _ := GetQName(request)
 		conf, ok := ConfigLookup(qname)
 		if ok {
 			index := 0
@@ -464,49 +472,41 @@ func RedirectDNS() {
 				index, _ = NSLookup(qname, 1, conf.Server)
 			}
 			response := BuildLie(request, index, qtype)
+			udpsize := len(response) + 8
 
-			ipLayer := packet.NetworkLayer()
-			udpLayer := packet.TransportLayer().(*layers.UDP)
-			udpLayer.SetNetworkLayerForChecksum(ipLayer)
-
-			buffer := gopacket.NewSerializeBuffer()
-			var options gopacket.SerializeOptions
-			options.FixLengths = true
-
-			switch ip := ipLayer.(type) {
-			case *layers.IPv4:
-				dstIP := ip.DstIP
-				ip.DstIP = ip.SrcIP
-				ip.SrcIP = dstIP
-
-				dstPort := udpLayer.DstPort
-				udpLayer.DstPort = udpLayer.SrcPort
-				udpLayer.SrcPort = dstPort
-
-				gopacket.SerializeLayers(buffer, options,
-					ip, udpLayer, gopacket.Payload(response),
-				)
-			case *layers.IPv6:
-				dstIP := ip.DstIP
-				ip.DstIP = ip.SrcIP
-				ip.SrcIP = dstIP
-
-				dstPort := udpLayer.DstPort
-				udpLayer.DstPort = udpLayer.SrcPort
-				udpLayer.SrcPort = dstPort
-
-				gopacket.SerializeLayers(buffer, options,
-					ip, udpLayer, gopacket.Payload(response),
-				)
+			var packetsize int
+			if ipv6 {
+				copy(rawbuf, []byte{96, 12, 19, 68, 0, 98, 17, 128})
+				packetsize = 40 + udpsize
+				binary.BigEndian.PutUint16(rawbuf[4:], uint16(udpsize))
+				copy(rawbuf[8:], packet.Raw[24:40])
+				copy(rawbuf[24:], packet.Raw[8:24])
+				copy(rawbuf[ipheadlen:], packet.Raw[ipheadlen+2:ipheadlen+4])
+				copy(rawbuf[ipheadlen+2:], packet.Raw[ipheadlen:ipheadlen+2])
+			} else {
+				copy(rawbuf, []byte{69, 0, 1, 32, 141, 152, 64, 0, 64, 17, 150, 46})
+				packetsize = 20 + udpsize
+				binary.BigEndian.PutUint16(rawbuf[2:], uint16(packetsize))
+				copy(rawbuf[12:], packet.Raw[16:20])
+				copy(rawbuf[16:], packet.Raw[12:16])
+				copy(rawbuf[20:], packet.Raw[ipheadlen+2:ipheadlen+4])
+				copy(rawbuf[22:], packet.Raw[ipheadlen:ipheadlen+2])
+				ipheadlen = 20
 			}
 
-			divertpacket.Raw = buffer.Bytes()
-			divertpacket.PacketLen = uint(len(divertpacket.Raw))
-			divertpacket.ParseHeaders()
-			divertpacket.Addr.Data |= 0x1
-			divertpacket.CalcNewChecksum(winDivert)
+			binary.BigEndian.PutUint16(rawbuf[ipheadlen+4:], uint16(udpsize))
+			copy(rawbuf[ipheadlen+8:], response)
+
+			packet.PacketLen = uint(packetsize)
+			packet.Raw = rawbuf[:packetsize]
+			packet.Addr.Data |= 0x1
+			packet.CalcNewChecksum(winDivert)
 		}
 
-		winDivert.Send(divertpacket)
+		_, err = winDivert.Send(packet)
+		if err != nil {
+			logPrintln(1, err)
+			return
+		}
 	}
 }
