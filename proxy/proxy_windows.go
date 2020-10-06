@@ -5,6 +5,7 @@ package proxy
 
 import (
 	"net"
+	"os/exec"
 	"strings"
 
 	ptcp "../phantomtcp"
@@ -26,6 +27,13 @@ func SetProxy(dev, address string, state bool) error {
 		case "redirect":
 			go ptcp.Redirect("6.0.0.1-6.0.255.254", proxyTCPAddr.Port, false)
 			go ptcp.RedirectDNS()
+
+			arg := []string{"/flushdns"}
+			cmd := exec.Command("ipconfig", arg...)
+			_, err := cmd.CombinedOutput()
+			if err != nil {
+				return err
+			}
 		default:
 			return nil
 		}
