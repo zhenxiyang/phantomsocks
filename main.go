@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -155,34 +157,71 @@ func DNSServer(listenAddr string) error {
 	}
 }
 
-var configFiles = flag.String("c", "default.conf", "Config")
-var hostsFile = flag.String("hosts", "", "Hosts")
-var socksListenAddr = flag.String("socks", "", "Socks5")
-var httpListenAddr = flag.String("http", "", "HTTP")
-var pacListenAddr = flag.String("pac", "", "PACServer")
-var sniListenAddr = flag.String("sni", "", "SNIProxy")
-var redirectAddr = flag.String("redir", "", "Redirect")
-var systemProxy = flag.String("proxy", "", "Proxy")
-var dnsListenAddr = flag.String("dns", "", "DNS")
-var device = flag.String("device", "", "Device")
-var logLevel = flag.Int("log", 0, "LogLevel")
-var clients = flag.String("clients", "", "Clients")
-
 func main() {
 	runtime.GOMAXPROCS(1)
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	//log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	flag.Parse()
+	var flags struct {
+		ConfigFiles     string `json:"config,omitempty"`
+		HostsFile       string `json:"hosts,omitempty"`
+		SocksListenAddr string `json:"socks,omitempty"`
+		HttpListenAddr  string `json:"http,omitempty"`
+		PacListenAddr   string `json:"pac,omitempty"`
+		SniListenAddr   string `json:"sni,omitempty"`
+		RedirectAddr    string `json:"redir,omitempty"`
+		SystemProxy     string `json:"proxy,omitempty"`
+		DnsListenAddr   string `json:"dns,omitempty"`
+		Device          string `json:"device,omitempty"`
+		Clients         string `json:"clients,omitempty"`
+		LogLevel        int    `json:"log,omitempty"`
+	}
 
-	devices := strings.Split(*device, ",")
+	if len(os.Args) > 1 {
+		flag.StringVar(&flags.ConfigFiles, "c", "default.conf", "Config")
+		flag.StringVar(&flags.HostsFile, "hosts", "", "Hosts")
+		flag.StringVar(&flags.SocksListenAddr, "socks", "", "Socks5")
+		flag.StringVar(&flags.HttpListenAddr, "http", "", "HTTP")
+		flag.StringVar(&flags.PacListenAddr, "pac", "", "PACServer")
+		flag.StringVar(&flags.SniListenAddr, "sni", "", "SNIProxy")
+		flag.StringVar(&flags.RedirectAddr, "redir", "", "Redirect")
+		flag.StringVar(&flags.SystemProxy, "proxy", "", "Proxy")
+		flag.StringVar(&flags.DnsListenAddr, "dns", "", "DNS")
+		flag.StringVar(&flags.Device, "device", "", "Device")
+		flag.StringVar(&flags.Clients, "clients", "", "Clients")
+		flag.IntVar(&flags.LogLevel, "log", 0, "LogLevel")
+		flag.Parse()
+	} else {
+		conf, err := os.Open("phantomsocks.json")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		bytes, err := ioutil.ReadAll(conf)
+		if err != nil {
+			log.Panic(err)
+		}
+		conf.Close()
+
+		err = json.Unmarshal(bytes, &flags)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		if flags.ConfigFiles == "" {
+			flags.ConfigFiles = "default.conf"
+		}
+	}
+
+	devices := strings.Split(flags.Device, ",")
 	if !ptcp.ConnectionMonitor(devices) {
 		return
 	}
 
-	ptcp.LogLevel = *logLevel
+	ptcp.LogLevel = flags.LogLevel
 	ptcp.Init()
 
-	for _, filename := range strings.Split(*configFiles, ",") {
+	for _, filename := range strings.Split(flags.ConfigFiles, ",") {
 		err := ptcp.LoadConfig(filename)
 		if err != nil {
 			if ptcp.LogLevel > 0 {
@@ -191,8 +230,8 @@ func main() {
 			return
 		}
 	}
-	if *hostsFile != "" {
-		err := ptcp.LoadHosts(*hostsFile)
+	if flags.HostsFile != "" {
+		err := ptcp.LoadHosts(flags.HostsFile)
 		if err != nil {
 			if ptcp.LogLevel > 0 {
 				log.Println(err)
@@ -201,48 +240,48 @@ func main() {
 		}
 	}
 
-	if *clients != "" {
+	if flags.Clients != "" {
 		allowlist = make(map[string]bool)
-		list := strings.Split(*clients, ",")
+		list := strings.Split(flags.Clients, ",")
 		for _, c := range list {
 			allowlist[c] = true
 		}
 	}
 
-	if *socksListenAddr != "" {
-		fmt.Println("Socks:", *socksListenAddr)
-		go ListenAndServe(*socksListenAddr, ptcp.SocksProxy)
-		if *pacListenAddr != "" {
-			go PACServer(*pacListenAddr, *socksListenAddr)
+	if flags.SocksListenAddr != "" {
+		fmt.Println("Socks:", flags.SocksListenAddr)
+		go ListenAndServe(flags.SocksListenAddr, ptcp.SocksProxy)
+		if flags.PacListenAddr != "" {
+			go PACServer(flags.PacListenAddr, flags.SocksListenAddr)
 		}
 	}
 
-	if *httpListenAddr != "" {
-		fmt.Println("HTTP:", *httpListenAddr)
-		go ListenAndServe(*httpListenAddr, ptcp.HTTPProxy)
+	if flags.HttpListenAddr != "" {
+		fmt.Println("HTTP:", flags.HttpListenAddr)
+		go ListenAndServe(flags.HttpListenAddr, ptcp.HTTPProxy)
 	}
 
-	if *sniListenAddr != "" {
-		fmt.Println("SNI:", *sniListenAddr)
-		go ListenAndServe(*sniListenAddr, ptcp.SNIProxy)
+	if flags.SniListenAddr != "" {
+		fmt.Println("SNI:", flags.SniListenAddr)
+		go ListenAndServe(flags.SniListenAddr, ptcp.SNIProxy)
 	}
 
-	if *redirectAddr != "" {
-		fmt.Println("Redirect:", *redirectAddr)
-		go ListenAndServe(*redirectAddr, ptcp.RedirectProxy)
+	if flags.RedirectAddr != "" {
+		fmt.Println("Redirect:", flags.RedirectAddr)
+		go ListenAndServe(flags.RedirectAddr, ptcp.RedirectProxy)
 	}
 
-	if *systemProxy != "" {
+	if flags.SystemProxy != "" {
 		for _, dev := range devices {
-			err := proxy.SetProxy(dev, *systemProxy, true)
+			err := proxy.SetProxy(dev, flags.SystemProxy, true)
 			if err != nil {
 				fmt.Println(err)
 			}
 		}
 	}
 
-	if *dnsListenAddr != "" {
-		go DNSServer(*dnsListenAddr)
+	if flags.DnsListenAddr != "" {
+		go DNSServer(flags.DnsListenAddr)
 	}
 
 	c := make(chan os.Signal, 1)
@@ -250,9 +289,9 @@ func main() {
 	s := <-c
 	fmt.Println(s)
 
-	if *systemProxy != "" {
+	if flags.SystemProxy != "" {
 		for _, dev := range devices {
-			err := proxy.SetProxy(dev, *systemProxy, false)
+			err := proxy.SetProxy(dev, flags.SystemProxy, false)
 			if err != nil {
 				fmt.Println(err)
 			}

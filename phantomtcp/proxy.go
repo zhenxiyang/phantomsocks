@@ -444,7 +444,6 @@ func RedirectProxy(client net.Conn) {
 			logPrintln(1, err)
 			return
 		}
-		log.Println(addr)
 
 		ip := []byte(addr.IP)
 		iptype := binary.BigEndian.Uint16(ip[:2])
