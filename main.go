@@ -14,7 +14,6 @@ import (
 
 	ptcp "./phantomtcp"
 	proxy "./proxy"
-	systray "./systray"
 )
 
 var allowlist map[string]bool = nil
@@ -177,7 +176,6 @@ func main() {
 		LogLevel        int    `json:"log,omitempty"`
 	}
 
-	tray := false
 	if len(os.Args) > 1 {
 		flag.StringVar(&flags.ConfigFiles, "c", "default.conf", "Config")
 		flag.StringVar(&flags.HostsFile, "hosts", "", "Hosts")
@@ -213,8 +211,6 @@ func main() {
 		if flags.ConfigFiles == "" {
 			flags.ConfigFiles = "default.conf"
 		}
-
-		tray = true
 	}
 
 	devices := strings.Split(flags.Device, ",")
@@ -288,14 +284,10 @@ func main() {
 		go DNSServer(flags.DnsListenAddr)
 	}
 
-	if tray {
-		systray.Run()
-	} else {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, os.Kill)
-		s := <-c
-		fmt.Println(s)
-	}
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, os.Kill)
+	s := <-c
+	fmt.Println(s)
 
 	if flags.SystemProxy != "" {
 		for _, dev := range devices {

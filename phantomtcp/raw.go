@@ -126,7 +126,7 @@ func connectionMonitor(device string, ipv6 bool) {
 	}
 }
 
-func ConnectionMonitor(devices []string) bool {
+func ConnectionMonitor(devices []string, synack bool) bool {
 	if devices == nil {
 		DevicePrint()
 		return false
