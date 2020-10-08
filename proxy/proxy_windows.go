@@ -25,8 +25,10 @@ func SetProxy(dev, address string, state bool) error {
 	if state {
 		switch proxyAddr[0] {
 		case "redirect":
-			go ptcp.Redirect("6.0.0.1-6.0.255.254", proxyTCPAddr.Port, false)
-			go ptcp.RedirectDNS()
+			if state {
+				go ptcp.Redirect("6.0.0.1-6.0.255.254", proxyTCPAddr.Port, false)
+				go ptcp.RedirectDNS()
+			}
 
 			arg := []string{"/flushdns"}
 			cmd := exec.Command("ipconfig", arg...)
