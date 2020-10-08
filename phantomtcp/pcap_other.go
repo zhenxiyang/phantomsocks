@@ -59,7 +59,9 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 		}
 
 		if method&OPT_WMD5 != 0 {
-			tcpLayer.Options = []layers.TCPOption{layers.TCPOption{19, 18, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}}
+			tcpLayer.Options = []layers.TCPOption{
+				layers.TCPOption{19, 18, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+			}
 		} else if method&OPT_WTIME != 0 {
 			tcpLayer.Options = []layers.TCPOption{
 				layers.TCPOption{8, 8, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
