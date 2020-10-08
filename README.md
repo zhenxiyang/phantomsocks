@@ -35,7 +35,7 @@ Windows(windivert):
 phantomsocks -socks 0.0.0.0:1080
 
 macOS:
-sudo ./phantomsocks -device en0 -socks 127.0.0.1:1080 -proxy socks://127.0.0.1:1080
+./phantomsocks -device en0 -socks 127.0.0.1:1080 -proxy socks://127.0.0.1:1080
 ```
 ### Redirect:
 ```
