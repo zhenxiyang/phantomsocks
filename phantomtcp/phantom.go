@@ -58,6 +58,7 @@ const (
 	OPT_IPV4  = 0x1 << 19
 	OPT_IPV6  = 0x1 << 20
 	OPT_MODE2 = 0x1 << 21
+	OPT_PROXY = 0x1 << 22
 )
 
 const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME
@@ -85,6 +86,7 @@ var MethodMap = map[string]uint32{
 	"ipv4":  OPT_IPV4,
 	"ipv6":  OPT_IPV6,
 	"mode2": OPT_MODE2,
+	"proxy": OPT_PROXY,
 }
 
 var Logger *log.Logger

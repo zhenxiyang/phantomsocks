@@ -1,11 +1,15 @@
 package phantomtcp
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"net"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -460,4 +464,232 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 
 	go io.Copy(conn, client)
 	return conn, err
+}
+
+func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, error) {
+	var err error
+	var conn net.Conn
+
+	u, err := url.Parse(proxy)
+	if err != nil {
+		return nil, err
+	}
+
+	proxyhost := u.Host
+	scheme := u.Scheme
+	proxy_err := errors.New("invalid proxy")
+
+	var synpacket *ConnectionInfo
+	var method uint32 = 0
+	if conf != nil {
+		method = conf.Option & OPT_FAKE
+	}
+
+	if method != 0 {
+		method = conf.Option
+		raddr, err := net.ResolveTCPAddr("tcp", proxyhost)
+		if err != nil {
+			return nil, err
+		}
+		laddr, err := GetLocalAddr(conf.Device, raddr.IP.To4() == nil)
+		if err != nil {
+			return nil, err
+		}
+
+		conn, synpacket, err = DialConnInfo(laddr, raddr, conf, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if synpacket == nil {
+			if conn != nil {
+				conn.Close()
+			}
+			return nil, errors.New("connection does not exist")
+		}
+		synpacket.TCP.Seq++
+	} else {
+		conn, err = net.Dial("tcp", proxyhost)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var proxy_seq uint32 = 0
+	switch scheme {
+	case "http":
+		{
+			request := []byte(fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", address))
+			fakepayload := make([]byte, len(request))
+			var n int
+			if method != 0 {
+				n, err = conn.Write(request[:4])
+				if err != nil {
+					return nil, err
+				}
+				proxy_seq += uint32(n)
+				err = ModifyAndSendPacket(synpacket, fakepayload, method, conf.TTL, 2)
+				if err != nil {
+					return nil, err
+				}
+				n, err = conn.Write(request[4:])
+				if err != nil {
+					return nil, err
+				}
+				proxy_seq += uint32(n)
+			} else {
+				n, err = conn.Write(request)
+				if err != nil {
+					return nil, err
+				}
+			}
+			var response [128]byte
+			n, err = conn.Read(response[:])
+			if err != nil || !strings.HasPrefix(string(response[:n]), "HTTP/1.1 200 ") {
+				return nil, errors.New("failed to connect to proxy")
+			}
+		}
+	case "socks":
+		{
+			var b [264]byte
+			if method != 0 {
+				err := ModifyAndSendPacket(synpacket, b[:], method, conf.TTL, 2)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			n, err := conn.Write([]byte{0x05, 0x01, 0x00})
+			if err != nil {
+				return nil, err
+			}
+			proxy_seq += uint32(n)
+			_, err = conn.Read(b[:])
+			if err != nil {
+				return nil, err
+			}
+
+			if b[0] != 0x05 {
+				return nil, proxy_err
+			}
+
+			copy(b[:], []byte{0x05, 0x01, 0x00, 0x03})
+			host, port := splitHostPort(address)
+			hostLen := len(host)
+			b[4] = byte(hostLen)
+			copy(b[5:], []byte(host))
+			binary.BigEndian.PutUint16(b[5+hostLen:], uint16(port))
+			n, err = conn.Write(b[:7+hostLen])
+			if err != nil {
+				return nil, err
+			}
+			proxy_seq += uint32(n)
+			n, err = conn.Read(b[:])
+			if err != nil {
+				return nil, err
+			}
+			if n < 2 {
+				return nil, proxy_err
+			}
+			if b[0] != 0x05 {
+				return nil, proxy_err
+			}
+			if b[1] != 0x00 {
+				return nil, proxy_err
+			}
+		}
+	default:
+		return nil, proxy_err
+	}
+
+	if method == 0 {
+		if b != nil {
+			_, err = conn.Write(b)
+			if err != nil {
+				conn.Close()
+			}
+		}
+		return conn, err
+	}
+
+	offset, length := GetSNI(b)
+	if length > 0 {
+		fakepaylen := 1280
+		if len(b) < fakepaylen {
+			fakepaylen = len(b)
+		}
+		fakepayload := make([]byte, fakepaylen)
+		copy(fakepayload, b[:fakepaylen])
+
+		min_dot := offset + length
+		max_dot := offset
+		for i := offset; i < offset+length; i++ {
+			if fakepayload[i] == '.' {
+				if i < min_dot {
+					min_dot = i
+				}
+				if i > max_dot {
+					max_dot = i
+				}
+			} else {
+				fakepayload[i] = domainBytes[rand.Intn(len(domainBytes))]
+			}
+		}
+		if min_dot == max_dot {
+			min_dot = offset
+		}
+		cut := (min_dot + max_dot) / 2
+
+		count := 1
+		if method&OPT_SSEG != 0 {
+			_, err = conn.Write(b[:4])
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+		}
+
+		synpacket.TCP.Seq += proxy_seq
+		if method&OPT_MODE2 != 0 {
+			synpacket.TCP.Seq += uint32(cut)
+			fakepayload = fakepayload[cut:]
+			count = 2
+		} else {
+			err = ModifyAndSendPacket(synpacket, fakepayload, method, conf.TTL, count)
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+		}
+
+		if method&OPT_SSEG != 0 {
+			_, err = conn.Write(b[4:cut])
+		} else {
+			_, err = conn.Write(b[:cut])
+		}
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+
+		err = ModifyAndSendPacket(synpacket, fakepayload, method, conf.TTL, count)
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+
+		_, err = conn.Write(b[cut:])
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+
+		return conn, err
+	} else {
+		_, err = conn.Write(b)
+		if err != nil {
+			conn.Close()
+		}
+		return conn, err
+	}
 }

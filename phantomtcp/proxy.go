@@ -470,7 +470,11 @@ func RedirectProxy(client net.Conn) {
 
 		config, ok := ConfigLookup(host)
 
-		if ok {
+		if !ok {
+			return
+		}
+
+		if config.Option&OPT_PROXY == 0 {
 			var ips []net.IP
 			if config.Option&OPT_IPV6 != 0 {
 				_, ips = NSLookup(host, 28, config.Server)
@@ -505,7 +509,7 @@ func RedirectProxy(client net.Conn) {
 						conf = &config
 					}
 
-					logPrintln(1, "Proxy:", client.RemoteAddr(), "->", host, port, config)
+					logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
 
 					conn, err = Dial(ips, port, b[:n], conf)
 					if err != nil {
@@ -513,7 +517,7 @@ func RedirectProxy(client net.Conn) {
 						return
 					}
 				} else {
-					logPrintln(1, "Proxy:", client.RemoteAddr(), "->", host, port, config)
+					logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
 					if config.Option&OPT_HTTPS != 0 {
 						HttpMove(client, "https", b[:n])
 						return
@@ -537,7 +541,20 @@ func RedirectProxy(client net.Conn) {
 				}
 			}
 		} else {
-			return
+			logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, config)
+
+			var b [1500]byte
+			n, err := client.Read(b[:])
+			if err != nil {
+				logPrintln(1, err)
+				return
+			}
+
+			conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, b[:n], &config)
+			if err != nil {
+				logPrintln(1, host, err)
+				return
+			}
 		}
 	}
 
