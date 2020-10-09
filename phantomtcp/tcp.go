@@ -482,7 +482,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 	var synpacket *ConnectionInfo
 	var method uint32 = 0
 	if conf != nil {
-		method = conf.Option & OPT_FAKE
+		method = conf.Option & OPT_MODIFY
 	}
 
 	if method != 0 {
@@ -521,18 +521,33 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 		{
 			request := []byte(fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", address))
 			fakepayload := make([]byte, len(request))
-			var n int
+			var n int = 0
 			if method != 0 {
-				n, err = conn.Write(request[:4])
-				if err != nil {
-					return nil, err
+				if method&OPT_SSEG != 0 {
+					n, err = conn.Write(request[:4])
+					if err != nil {
+						return nil, err
+					}
+				} else if method&OPT_MODE2 != 0 {
+					n, err = conn.Write(request[:10])
+					if err != nil {
+						return nil, err
+					}
 				}
+
 				proxy_seq += uint32(n)
 				err = ModifyAndSendPacket(synpacket, fakepayload, method, conf.TTL, 2)
 				if err != nil {
 					return nil, err
 				}
-				n, err = conn.Write(request[4:])
+
+				if method&OPT_SSEG != 0 {
+					n, err = conn.Write(request[4:])
+				} else if method&OPT_MODE2 != 0 {
+					n, err = conn.Write(request[10:])
+				} else {
+					n, err = conn.Write(request)
+				}
 				if err != nil {
 					return nil, err
 				}
