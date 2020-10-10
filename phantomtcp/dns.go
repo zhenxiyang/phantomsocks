@@ -10,7 +10,6 @@ import (
 )
 
 var DNS string = ""
-var DNS64 string = ""
 
 func TCPlookup(request []byte, address string) ([]byte, error) {
 	data := make([]byte, 1024)

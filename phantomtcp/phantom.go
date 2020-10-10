@@ -287,6 +287,7 @@ func LoadConfig(filename string) error {
 	server := ""
 	device := ""
 
+	DNS = ""
 	for {
 		line, _, err := br.ReadLine()
 		if err == io.EOF {
@@ -303,9 +304,6 @@ func LoadConfig(filename string) error {
 							DNS = keys[1]
 						}
 						server = keys[1]
-						logPrintln(2, string(line))
-					} else if keys[0] == "dns64" {
-						DNS64 = keys[1]
 						logPrintln(2, string(line))
 					} else if keys[0] == "method" {
 						option = OPT_NONE

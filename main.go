@@ -127,22 +127,16 @@ func DNSServer(listenAddr string) error {
 			var response []byte
 			var err error
 			_server := strings.SplitN(ptcp.DNS, "/", 4)
+			if ptcp.LogLevel > 1 {
+				fmt.Println(clientAddr, qname, ptcp.DNS)
+			}
 			if len(_server) > 2 {
 				switch _server[0] {
 				case "udp:":
-					if ptcp.LogLevel > 1 {
-						fmt.Println("UDP:", clientAddr, qname)
-					}
 					response, err = ptcp.UDPlookup(request, _server[2])
 				case "tcp:":
-					if ptcp.LogLevel > 1 {
-						fmt.Println("TCP:", clientAddr, qname)
-					}
 					response, err = ptcp.TCPlookup(request, _server[2])
 				case "tls:":
-					if ptcp.LogLevel > 1 {
-						fmt.Println("DOT:", clientAddr, qname)
-					}
 					response, err = ptcp.TLSlookup(request, _server[2])
 				default:
 					return

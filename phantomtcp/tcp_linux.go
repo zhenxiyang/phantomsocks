@@ -71,7 +71,7 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 	}
 	DelConn(raddr.String())
 
-	if payload != nil {
+	if (payload != nil) || (conf.MAXTTL != 0) {
 		if connInfo == nil {
 			conn.Close()
 			return nil, nil, nil
@@ -87,7 +87,11 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 			conn.Close()
 			return nil, nil, err
 		}
-		err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, 64)
+		if conf.MAXTTL != 0 {
+			err = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, int(conf.MAXTTL))
+		} else {
+			err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, 64)
+		}
 		if err != nil {
 			conn.Close()
 			return nil, nil, err
