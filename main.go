@@ -116,7 +116,12 @@ func DNSServer(listenAddr string) error {
 			} else {
 				index, _ = ptcp.NSLookup(qname, 1, conf.Server)
 			}
-			response := ptcp.BuildLie(data[:n], index, qtype)
+			var response []byte
+			if qtype == 28 {
+				response = ptcp.BuildResponse(data[:n], nil, qtype)
+			} else {
+				response = ptcp.BuildLie(data[:n], index, qtype)
+			}
 			conn.WriteToUDP(response, clientAddr)
 			continue
 		}

@@ -410,6 +410,20 @@ func packAnswers(ips []string, qtype int) (int, []byte) {
 	return count, answers
 }
 
+func BuildResponse(request []byte, ips []string, qtype int) []byte {
+	response := make([]byte, 1024)
+	copy(response, request)
+	length := len(request)
+	response[2] = 0x81
+	response[3] = 0x80
+	if qtype == 1 {
+		binary.BigEndian.PutUint16(response[6:], 0)
+	} else if qtype == 28 {
+		binary.BigEndian.PutUint16(response[6:], 0)
+	}
+	return response[:length]
+}
+
 func BuildLie(request []byte, id int, qtype int) []byte {
 	response := make([]byte, 1024)
 	copy(response, request)
