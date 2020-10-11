@@ -150,7 +150,12 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 	var err error
 	var conn net.Conn
 
-	if conf == nil || b == nil {
+	var method uint32 = 0
+	if conf != nil && b != nil {
+		method = conf.Option | OPT_MODIFY
+	}
+
+	if method == 0 {
 		ip := addresses[rand.Intn(len(addresses))]
 		raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
 		conn, err = net.DialTCP("tcp", nil, raddr)

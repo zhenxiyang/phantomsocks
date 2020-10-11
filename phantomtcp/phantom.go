@@ -53,12 +53,13 @@ const (
 	OPT_SYNX2     = 0x1 << 12
 
 	OPT_HTTPS = 0x1 << 16
-	OPT_STRIP = 0x1 << 17
-	OPT_NAT64 = 0x1 << 18
-	OPT_IPV4  = 0x1 << 19
-	OPT_IPV6  = 0x1 << 20
-	OPT_MODE2 = 0x1 << 21
-	OPT_PROXY = 0x1 << 22
+	OPT_MOVE  = 0x1 << 17
+	OPT_STRIP = 0x1 << 18
+	OPT_NAT64 = 0x1 << 19
+	OPT_IPV4  = 0x1 << 20
+	OPT_IPV6  = 0x1 << 21
+	OPT_MODE2 = 0x1 << 22
+	OPT_PROXY = 0x1 << 23
 )
 
 const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME
@@ -82,6 +83,7 @@ var MethodMap = map[string]uint32{
 	"synx2":      OPT_SYNX2,
 
 	"https": OPT_HTTPS,
+	"move":  OPT_MOVE,
 	"strip": OPT_STRIP,
 	"nat64": OPT_NAT64,
 	"ipv4":  OPT_IPV4,

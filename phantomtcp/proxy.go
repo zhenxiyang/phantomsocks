@@ -79,74 +79,87 @@ func SocksProxy(client net.Conn) {
 				host = string(b[1 : addrLen+1])
 				conf, ok = ConfigLookup(host)
 				if ok {
-					logPrintln(1, "Socks:", host, port, conf)
+					if conf.Option&OPT_PROXY == 0 {
+						logPrintln(1, "Socks:", host, port, conf)
 
-					var ips []net.IP
-					if conf.Option&OPT_IPV6 != 0 {
-						_, ips = NSLookup(host, 28, conf.Server)
-					} else {
-						_, ips = NSLookup(host, 1, conf.Server)
-					}
+						var ips []net.IP
+						if conf.Option&OPT_IPV6 != 0 {
+							_, ips = NSLookup(host, 28, conf.Server)
+						} else {
+							_, ips = NSLookup(host, 1, conf.Server)
+						}
 
-					if len(ips) == 0 {
-						logPrintln(1, host, "no such host")
-						return
-					}
-
-					if conf.Option == 0 {
-						conn, err = Dial(ips, port, nil, nil)
-						if err != nil {
-							logPrintln(1, err)
+						if len(ips) == 0 {
+							logPrintln(1, host, "no such host")
 							return
 						}
 
-						n, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-						if err != nil {
-							conn.Close()
-							logPrintln(1, err)
-							return
-						}
-					} else {
-						n, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-
-						n, err = client.Read(b[:])
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-
-						if b[0] != 0x16 {
-							if conf.Option&OPT_HTTPS != 0 {
-								HttpMove(client, "https", b[:n])
+						if conf.Option == 0 {
+							conn, err = Dial(ips, port, nil, nil)
+							if err != nil {
+								logPrintln(1, err)
 								return
-							} else if conf.Option&OPT_STRIP != 0 {
-								rand.Seed(time.Now().UnixNano())
-								ipaddr := ips[rand.Intn(len(ips))]
-								conn, err = DialStrip(ipaddr.String(), "")
-								if err != nil {
-									logPrintln(1, err)
-									return
-								}
-								_, err = conn.Write(b[:n])
-							} else {
-								conn, err = HTTP(client, ips, 80, b[:n], &conf)
-								if err != nil {
-									logPrintln(1, err)
-									return
-								}
-								io.Copy(client, conn)
+							}
+
+							n, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+							if err != nil {
+								conn.Close()
+								logPrintln(1, err)
 								return
 							}
 						} else {
-							conn, err = Dial(ips, port, b[:n], &conf)
+							n, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 							if err != nil {
-								logPrintln(1, host, err)
+								logPrintln(1, err)
 								return
 							}
+
+							n, err = client.Read(b[:])
+							if err != nil {
+								logPrintln(1, err)
+								return
+							}
+
+							if b[0] != 0x16 {
+								if conf.Option&OPT_HTTPS != 0 {
+									HttpMove(client, "https", b[:n])
+									return
+								} else if conf.Option&OPT_MOVE != 0 {
+									HttpMove(client, conf.Server, b[:n])
+									return
+								} else if conf.Option&OPT_STRIP != 0 {
+									rand.Seed(time.Now().UnixNano())
+									ipaddr := ips[rand.Intn(len(ips))]
+									conn, err = DialStrip(ipaddr.String(), "")
+									if err != nil {
+										logPrintln(1, err)
+										return
+									}
+									_, err = conn.Write(b[:n])
+								} else {
+									conn, err = HTTP(client, ips, 80, b[:n], &conf)
+									if err != nil {
+										logPrintln(1, err)
+										return
+									}
+									io.Copy(client, conn)
+									return
+								}
+							} else {
+								conn, err = Dial(ips, port, b[:n], &conf)
+								if err != nil {
+									logPrintln(1, host, err)
+									return
+								}
+							}
+						}
+					} else {
+						logPrintln(1, "SocksoverProxy:", client.RemoteAddr(), "->", host, port, conf)
+
+						conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), conf.Server, b[:n], &conf)
+						if err != nil {
+							logPrintln(1, host, err)
+							return
 						}
 					}
 				} else {
@@ -261,44 +274,57 @@ func HTTPProxy(client net.Conn) {
 		conf, ok := ConfigLookup(host)
 
 		if ok {
-			logPrintln(1, "HTTP:", host, port, conf)
+			if conf.Option&OPT_PROXY == 0 {
+				logPrintln(1, "HTTP:", host, port, conf)
 
-			var ips []net.IP
-			if conf.Option&OPT_IPV6 != 0 {
-				_, ips = NSLookup(host, 28, conf.Server)
-			} else {
-				_, ips = NSLookup(host, 1, conf.Server)
-			}
-			if len(ips) == 0 {
-				logPrintln(1, host, "no such host")
-				return
-			}
-
-			if b[0] == 0x16 {
-				conn, err = Dial(ips, port, b[:n], &conf)
-				if err != nil {
-					logPrintln(1, host, err)
+				var ips []net.IP
+				if conf.Option&OPT_IPV6 != 0 {
+					_, ips = NSLookup(host, 28, conf.Server)
+				} else {
+					_, ips = NSLookup(host, 1, conf.Server)
+				}
+				if len(ips) == 0 {
+					logPrintln(1, host, "no such host")
 					return
 				}
-			} else {
-				if conf.Option&OPT_HTTPS != 0 {
-					HttpMove(client, "https", b[:n])
-					return
-				} else if conf.Option&OPT_STRIP != 0 {
-					ip := ips[rand.Intn(len(ips))]
-					conn, err = DialStrip(ip.String(), "")
+
+				if b[0] == 0x16 {
+					conn, err = Dial(ips, port, b[:n], &conf)
 					if err != nil {
-						logPrintln(1, err)
+						logPrintln(1, host, err)
 						return
 					}
-					_, err = conn.Write(b[:n])
 				} else {
-					conn, err = HTTP(client, ips, port, b[:n], &conf)
-					if err != nil {
-						logPrintln(1, err)
+					if conf.Option&OPT_HTTPS != 0 {
+						HttpMove(client, "https", b[:n])
+						return
+					} else if conf.Option&OPT_MOVE != 0 {
+						HttpMove(client, conf.Server, b[:n])
+						return
+					} else if conf.Option&OPT_STRIP != 0 {
+						ip := ips[rand.Intn(len(ips))]
+						conn, err = DialStrip(ip.String(), "")
+						if err != nil {
+							logPrintln(1, err)
+							return
+						}
+						_, err = conn.Write(b[:n])
+					} else {
+						conn, err = HTTP(client, ips, port, b[:n], &conf)
+						if err != nil {
+							logPrintln(1, err)
+							return
+						}
+						io.Copy(client, conn)
 						return
 					}
-					io.Copy(client, conn)
+				}
+			} else {
+				logPrintln(1, "HTTPoverProxy:", client.RemoteAddr(), "->", host, port, conf)
+
+				conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), conf.Server, b[:n], &conf)
+				if err != nil {
+					logPrintln(1, host, err)
 					return
 				}
 			}
@@ -391,6 +417,9 @@ func SNIProxy(client net.Conn) {
 			} else {
 				if conf.Option&OPT_HTTPS != 0 {
 					HttpMove(client, "https", b[:n])
+					return
+				} else if conf.Option&OPT_MOVE != 0 {
+					HttpMove(client, conf.Server, b[:n])
 					return
 				} else if conf.Option&OPT_STRIP != 0 {
 					ip := ips[rand.Intn(len(ips))]
@@ -520,6 +549,9 @@ func RedirectProxy(client net.Conn) {
 					logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
 					if config.Option&OPT_HTTPS != 0 {
 						HttpMove(client, "https", b[:n])
+						return
+					} else if config.Option&OPT_MOVE != 0 {
+						HttpMove(client, config.Server, b[:n])
 						return
 					} else if config.Option&OPT_STRIP != 0 {
 						ip := ips[rand.Intn(len(ips))]
