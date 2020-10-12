@@ -380,12 +380,16 @@ func packAnswers(ips []net.IP, qtype int) (int, []byte) {
 	count := 0
 	for _, ip := range ips {
 		ip4 := ip.To4()
-		if ip4 != nil && qtype == 1 {
-			count++
-			totalLen += 16
-		} else if qtype == 28 {
-			count++
-			totalLen += 28
+		if ip4 != nil {
+			if qtype == 1 {
+				count++
+				totalLen += 16
+			}
+		} else {
+			if qtype == 28 {
+				count++
+				totalLen += 28
+			}
 		}
 	}
 
@@ -486,8 +490,9 @@ func PackQName(name string) []byte {
 }
 
 type ServerOptions struct {
-	ECS string
-	PD  string
+	ECS  string
+	Type string
+	PD   string
 }
 
 func ParseOptions(options string) ServerOptions {
@@ -501,6 +506,8 @@ func ParseOptions(options string) ServerOptions {
 				serverOpts.ECS = key[1]
 			case "pd":
 				serverOpts.PD = key[1]
+			case "type":
+				serverOpts.Type = key[1]
 			}
 		}
 	}
@@ -704,16 +711,11 @@ func NSRequest(request []byte) []byte {
 	conf, ok := ConfigLookup(name)
 	var options ServerOptions
 	var method uint32
-	ipv6 := false
 	var serverAddr []string
 	if ok {
 		method = conf.Option
 		logPrintln(2, name, conf.Server)
 		serverAddr = strings.SplitN(conf.Server, "/", 4)
-		if method&OPT_IPV6 != 0 {
-			ipv6 = true
-		}
-		method &= OPT_MODIFY
 	} else {
 		method = 0
 		logPrintln(2, name, DNS)
@@ -723,13 +725,20 @@ func NSRequest(request []byte) []byte {
 	if len(serverAddr) > 3 {
 		options = ParseOptions(serverAddr[3])
 	}
+
+	if options.Type == "A" && qtype == 28 {
+		return BuildResponse(request, nil, qtype)
+	} else if options.Type == "AAAA" && qtype == 1 {
+		return BuildResponse(request, nil, qtype)
+	}
+
 	if len(serverAddr) > 2 {
 		if method != 0 {
 			if qtype == 28 {
 				return BuildResponse(request, nil, qtype)
 			}
 			_qtype := uint16(qtype)
-			if ipv6 {
+			if method&OPT_IPV6 != 0 {
 				_qtype = 28
 			}
 			switch serverAddr[0] {
@@ -749,16 +758,6 @@ func NSRequest(request []byte) []byte {
 				return BuildLie(request, index, qtype)
 			}
 		} else {
-			if ipv6 {
-				if qtype == 1 {
-					return BuildResponse(request, nil, qtype)
-				}
-			} else {
-				if qtype == 28 {
-					return BuildResponse(request, nil, qtype)
-				}
-			}
-
 			switch serverAddr[0] {
 			case "udp:":
 				response, err = UDPlookup(request, serverAddr[2])
@@ -785,6 +784,9 @@ func NSRequest(request []byte) []byte {
 		}
 
 		if method != 0 {
+			if qtype == 28 {
+				return BuildResponse(request, nil, qtype)
+			}
 			index := len(Nose)
 			DNSCache.Store(name, DomainIP{index, ips})
 			Nose = append(Nose, name)
