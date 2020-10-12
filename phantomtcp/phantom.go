@@ -23,13 +23,7 @@ type Config struct {
 	Device string
 }
 
-type Answer struct {
-	Index     int
-	Addresses []net.IP
-}
-
 var DomainMap map[string]Config
-var DNSCache map[string]Answer
 
 var SubdomainDepth = 2
 var LogLevel = 0
@@ -268,7 +262,6 @@ func getMyIPv6() net.IP {
 
 func Init() {
 	DomainMap = make(map[string]Config)
-	DNSCache = make(map[string]Answer)
 }
 
 var Nose []string = []string{"phantom.socks"}
@@ -358,13 +351,16 @@ func LoadConfig(filename string) error {
 						}
 					} else {
 						ip := net.ParseIP(keys[0])
-						var ans Answer
+						var ans DomainIP
 						if strings.HasPrefix(keys[1], "[") {
 							var ok bool
-							ans, ok = DNSCache[keys[1][1:len(keys[1])-1]]
-							if !ok {
+							result, ok := DNSCache.Load(keys[1][1 : len(keys[1])-1])
+							if ok {
+								ans = result.(DomainIP)
+							} else {
 								log.Println(string(line), "bad domain")
 							}
+
 						} else {
 							index := len(Nose)
 							Nose = append(Nose, keys[0])
@@ -373,15 +369,15 @@ func LoadConfig(filename string) error {
 							for i := 0; i < len(ips); i++ {
 								addresses[i] = net.ParseIP(ips[i])
 							}
-							ans = Answer{index, addresses}
+							ans = DomainIP{index, addresses}
 						}
 
 						if ip == nil {
 							DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
-							DNSCache[keys[0]] = ans
+							DNSCache.Store(keys[0], ans)
 						} else {
 							DomainMap[ip.String()] = Config{option, minTTL, maxTTL, syncMSS, server, device}
-							DNSCache[ip.String()] = ans
+							DNSCache.Store(ip.String(), ans)
 						}
 					}
 				} else {
@@ -433,7 +429,7 @@ func LoadHosts(filename string) error {
 		k := strings.SplitN(string(line), "\t", 2)
 		if len(k) == 2 {
 			name := k[1]
-			ips, ok := DNSCache[name]
+			_, ok := DNSCache.Load(name)
 			if ok {
 				continue
 			}
@@ -444,9 +440,9 @@ func LoadHosts(filename string) error {
 					break
 				}
 				offset += off
-				ips, ok = DNSCache[name[offset:]]
+				result, ok := DNSCache.Load(name[offset:])
 				if ok {
-					DNSCache[name] = ips
+					DNSCache.Store(name, result.(DomainIP))
 					continue
 				}
 				offset++
@@ -455,7 +451,7 @@ func LoadHosts(filename string) error {
 			if !ok {
 				index := len(Nose)
 				Nose = append(Nose, name)
-				DNSCache[name] = Answer{index, []net.IP{net.ParseIP(k[0])}}
+				DNSCache.Store(name, DomainIP{index, []net.IP{net.ParseIP(k[0])}})
 			}
 		}
 	}

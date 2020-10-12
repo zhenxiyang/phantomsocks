@@ -107,50 +107,11 @@ func DNSServer(listenAddr string) error {
 		if err != nil {
 			continue
 		}
-		qname, qtype, _ := ptcp.GetQName(data[:n])
-		conf, ok := ptcp.ConfigLookup(qname)
-		if ok {
-			index := 0
-			if conf.Option&ptcp.OPT_IPV6 != 0 {
-				index, _ = ptcp.NSLookup(qname, 28, conf.Server)
-			} else {
-				index, _ = ptcp.NSLookup(qname, 1, conf.Server)
-			}
-			var response []byte
-			if qtype == 28 {
-				response = ptcp.BuildResponse(data[:n], nil, qtype)
-			} else {
-				response = ptcp.BuildLie(data[:n], index, qtype)
-			}
-			conn.WriteToUDP(response, clientAddr)
-			continue
-		}
 
 		request := make([]byte, n)
 		copy(request, data[:n])
 		go func(clientAddr *net.UDPAddr, request []byte) {
-			var response []byte
-			var err error
-			_server := strings.SplitN(ptcp.DNS, "/", 4)
-			if ptcp.LogLevel > 1 {
-				fmt.Println(clientAddr, qname, ptcp.DNS)
-			}
-			if len(_server) > 2 {
-				switch _server[0] {
-				case "udp:":
-					response, err = ptcp.UDPlookup(request, _server[2])
-				case "tcp:":
-					response, err = ptcp.TCPlookup(request, _server[2])
-				case "tls:":
-					response, err = ptcp.TLSlookup(request, _server[2])
-				default:
-					return
-				}
-			}
-			if err != nil {
-				log.Println(err)
-				return
-			}
+			response := ptcp.NSRequest(request)
 			conn.WriteToUDP(response, clientAddr)
 		}(clientAddr, request)
 	}

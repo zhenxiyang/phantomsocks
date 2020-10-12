@@ -6,10 +6,17 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
+type DomainIP struct {
+	Index     int
+	Addresses []net.IP
+}
+
 var DNS string = ""
+var DNSCache sync.Map
 
 func TCPlookup(request []byte, address string) ([]byte, error) {
 	data := make([]byte, 1024)
@@ -368,11 +375,11 @@ func getAnswers(response []byte) []net.IP {
 	return ips
 }
 
-func packAnswers(ips []string, qtype int) (int, []byte) {
+func packAnswers(ips []net.IP, qtype int) (int, []byte) {
 	totalLen := 0
 	count := 0
 	for _, ip := range ips {
-		ip4 := net.ParseIP(ip).To4()
+		ip4 := ip.To4()
 		if ip4 != nil && qtype == 1 {
 			count++
 			totalLen += 16
@@ -384,8 +391,7 @@ func packAnswers(ips []string, qtype int) (int, []byte) {
 
 	answers := make([]byte, totalLen)
 	length := 0
-	for _, strIP := range ips {
-		ip := net.ParseIP(strIP)
+	for _, ip := range ips {
 		ip4 := ip.To4()
 		if ip4 != nil {
 			if qtype == 1 {
@@ -410,17 +416,24 @@ func packAnswers(ips []string, qtype int) (int, []byte) {
 	return count, answers
 }
 
-func BuildResponse(request []byte, ips []string, qtype int) []byte {
+func BuildResponse(request []byte, ips []net.IP, qtype int) []byte {
 	response := make([]byte, 1024)
 	copy(response, request)
 	length := len(request)
 	response[2] = 0x81
 	response[3] = 0x80
-	if qtype == 1 {
-		binary.BigEndian.PutUint16(response[6:], 0)
-	} else if qtype == 28 {
-		binary.BigEndian.PutUint16(response[6:], 0)
+
+	if len(ips) == 0 {
+		return response[:length]
 	}
+
+	count, answer := packAnswers(ips, qtype)
+	binary.BigEndian.PutUint16(response[6:], uint16(count))
+	if count > 0 {
+		copy(response[length:], answer)
+		length += len(answer)
+	}
+
 	return response[:length]
 }
 
@@ -571,8 +584,9 @@ func PackRequest(name string, qtype uint16, ecs string) []byte {
 }
 
 func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
-	ans, ok := DNSCache[name]
+	result, ok := DNSCache.Load(name)
 	if ok {
+		ans := result.(DomainIP)
 		return ans.Index, ans.Addresses
 	}
 	offset := 0
@@ -582,8 +596,10 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 			break
 		}
 		offset += off
-		ans, ok = DNSCache[name[offset:]]
+		result, ok := DNSCache.Load(name[offset:])
+
 		if ok {
+			ans := result.(DomainIP)
 			logPrintln(3, "cached:", name, qtype, ans.Addresses)
 			return ans.Index, ans.Addresses
 		}
@@ -614,7 +630,7 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 			response, err = TLSlookup(request, _server[2])
 		default:
 			index := len(Nose)
-			DNSCache[name] = Answer{index, nil}
+			DNSCache.Store(name, DomainIP{index, nil})
 			Nose = append(Nose, name)
 			return index, nil
 		}
@@ -634,8 +650,158 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 	logPrintln(3, name, qtype, ips)
 
 	index := len(Nose)
-	DNSCache[name] = Answer{index, ips}
+	DNSCache.Store(name, DomainIP{index, ips})
 	Nose = append(Nose, name)
 
 	return index, ips
+}
+
+func NSRequest(request []byte) []byte {
+	name, qtype, _ := GetQName(request)
+	if name == "" {
+		logPrintln(2, "DNS Segmentation fault")
+		return nil
+	}
+
+	result, ok := DNSCache.Load(name)
+	if ok {
+		ans := result.(DomainIP)
+		if ans.Index > 0 {
+			if qtype == 28 {
+				return BuildResponse(request, nil, qtype)
+			}
+			return BuildLie(request, ans.Index, qtype)
+		} else {
+			return BuildResponse(request, ans.Addresses, qtype)
+		}
+	}
+	offset := 0
+	for i := 0; i < SubdomainDepth; i++ {
+		off := strings.Index(name[offset:], ".")
+		if off == -1 {
+			break
+		}
+		offset += off
+		result, ok := DNSCache.Load(name[offset:])
+		if ok {
+			ans := result.(DomainIP)
+			logPrintln(3, "cached:", name, qtype, ans.Addresses)
+			if ans.Index > 0 {
+				if qtype == 28 {
+					break
+				}
+				return BuildLie(request, ans.Index, qtype)
+			} else {
+				return BuildResponse(request, ans.Addresses, qtype)
+			}
+		}
+		offset++
+	}
+
+	var response []byte
+	var err error
+
+	conf, ok := ConfigLookup(name)
+	var options ServerOptions
+	var method uint32
+	ipv6 := false
+	var serverAddr []string
+	if ok {
+		method = conf.Option
+		logPrintln(2, name, conf.Server)
+		serverAddr = strings.SplitN(conf.Server, "/", 4)
+		if method&OPT_IPV6 != 0 {
+			ipv6 = true
+		}
+		method &= OPT_MODIFY
+	} else {
+		method = 0
+		logPrintln(2, name, DNS)
+		serverAddr = strings.SplitN(DNS, "/", 4)
+	}
+
+	if len(serverAddr) > 3 {
+		options = ParseOptions(serverAddr[3])
+	}
+	if len(serverAddr) > 2 {
+		if method != 0 {
+			if qtype == 28 {
+				return BuildResponse(request, nil, qtype)
+			}
+			_qtype := uint16(qtype)
+			if ipv6 {
+				_qtype = 28
+			}
+			switch serverAddr[0] {
+			case "udp:":
+				request = PackRequest(name, _qtype, options.ECS)
+				response, err = UDPlookup(request, serverAddr[2])
+			case "tcp:":
+				request = PackRequest(name, _qtype, options.ECS)
+				response, err = TCPlookup(request, serverAddr[2])
+			case "tls:":
+				request = PackRequest(name, _qtype, options.ECS)
+				response, err = TLSlookup(request, serverAddr[2])
+			default:
+				index := len(Nose)
+				DNSCache.Store(name, DomainIP{index, nil})
+				Nose = append(Nose, name)
+				return BuildLie(request, index, qtype)
+			}
+		} else {
+			if ipv6 {
+				if qtype == 1 {
+					return BuildResponse(request, nil, qtype)
+				}
+			} else {
+				if qtype == 28 {
+					return BuildResponse(request, nil, qtype)
+				}
+			}
+
+			switch serverAddr[0] {
+			case "udp:":
+				response, err = UDPlookup(request, serverAddr[2])
+			case "tcp:":
+				response, err = TCPlookup(request, serverAddr[2])
+			case "tls:":
+				response, err = TLSlookup(request, serverAddr[2])
+			default:
+				return nil
+			}
+		}
+	}
+	if err != nil {
+		logPrintln(1, err)
+		return nil
+	}
+
+	ips := getAnswers(response)
+	logPrintln(3, name, qtype, ips)
+
+	if options.PD != "" {
+		for i, ip := range ips {
+			ips[i] = net.ParseIP(options.PD + ip.String())
+		}
+
+		if method != 0 {
+			index := len(Nose)
+			DNSCache.Store(name, DomainIP{index, ips})
+			Nose = append(Nose, name)
+			return BuildLie(request, index, qtype)
+		} else {
+			DNSCache.Store(name, DomainIP{0, ips})
+			response = BuildResponse(request, ips, qtype)
+		}
+	} else {
+		index := 0
+		if method != 0 {
+			index = len(Nose)
+			Nose = append(Nose, name)
+			return BuildLie(request, index, qtype)
+		}
+		DNSCache.Store(name, DomainIP{index, ips})
+	}
+
+	return response
 }
