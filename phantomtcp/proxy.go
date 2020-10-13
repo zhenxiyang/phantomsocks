@@ -207,13 +207,13 @@ func validOptionalPort(port string) bool {
 func splitHostPort(hostport string) (host string, port int) {
 	var err error
 	host = hostport
-	port = 80
+	port = 0
 
 	colon := strings.LastIndexByte(host, ':')
 	if colon != -1 && validOptionalPort(host[colon:]) {
 		port, err = strconv.Atoi(host[colon+1:])
 		if err != nil {
-			port = 80
+			port = 0
 		}
 		host = host[:colon]
 	}
@@ -261,6 +261,9 @@ func HTTPProxy(client net.Conn) {
 		}
 
 		host, port = splitHostPort(host)
+		if port == 0 {
+			port = 80
+		}
 
 		conf, ok := ConfigLookup(host)
 

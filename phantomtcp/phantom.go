@@ -46,9 +46,10 @@ const (
 	OPT_KEEPALIVE = 0x1 << 11
 	OPT_SYNX2     = 0x1 << 12
 
-	OPT_HTTPS = 0x1 << 16
-	OPT_MOVE  = 0x1 << 17
-	OPT_STRIP = 0x1 << 18
+	OPT_HTTP  = 0x1 << 16
+	OPT_HTTPS = 0x1 << 17
+	OPT_MOVE  = 0x1 << 18
+	OPT_STRIP = 0x1 << 19
 	OPT_IPV4  = 0x1 << 20
 	OPT_IPV6  = 0x1 << 21
 	OPT_MODE2 = 0x1 << 22
@@ -75,6 +76,7 @@ var MethodMap = map[string]uint32{
 	"keep-alive": OPT_KEEPALIVE,
 	"synx2":      OPT_SYNX2,
 
+	"http":  OPT_HTTP,
 	"https": OPT_HTTPS,
 	"move":  OPT_MOVE,
 	"strip": OPT_STRIP,
@@ -223,6 +225,9 @@ func HttpMove(conn net.Conn, host string, b []byte) bool {
 		n += len(host)
 
 		start := 4
+		if start >= len(b) {
+			return false
+		}
 		header := string(b)
 		end := strings.Index(header[start:], " ")
 		if end < 0 {

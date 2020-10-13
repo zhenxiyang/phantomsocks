@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -486,7 +487,27 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 
 	var synpacket *ConnectionInfo
 	var method uint32 = 0
+
+	host, port := splitHostPort(address)
+	_, proxyport := splitHostPort(proxyhost)
+	if proxyport == 0 {
+		proxyhost = net.JoinHostPort(proxyhost, strconv.Itoa(port))
+	}
+
 	if conf != nil {
+		if conf.Option&OPT_HTTP != 0 {
+			var request_host string = ""
+			if b[0] == 0x16 {
+				offset, length := GetSNI(b)
+				request_host = string(b[offset : offset+length])
+			} else {
+				offset, length := GetHost(b)
+				request_host = string(b[offset : offset+length])
+			}
+			if host != request_host {
+				return nil, proxy_err
+			}
+		}
 		method = conf.Option & OPT_MODIFY
 	}
 
@@ -594,7 +615,6 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 			}
 
 			copy(b[:], []byte{0x05, 0x01, 0x00, 0x03})
-			host, port := splitHostPort(address)
 			hostLen := len(host)
 			b[4] = byte(hostLen)
 			copy(b[5:], []byte(host))
@@ -618,6 +638,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 				return nil, proxy_err
 			}
 		}
+	case "redirect":
 	default:
 		return nil, proxy_err
 	}
