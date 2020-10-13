@@ -48,20 +48,11 @@ func SocksProxy(client net.Conn) {
 					n, err = client.Read(b[:])
 
 					ip := addr.IP
-					result, ok := DNSCache.Load(ip.String())
+					result, ok := ACache.Load(ip.String())
 					var addresses []net.IP
 					if ok {
 						addresses = make([]net.IP, len(result.(DomainIP).Addresses))
-						if conf.Option&OPT_NAT64 != 0 {
-							for i := 0; i < len(result.(DomainIP).Addresses); i++ {
-								ip6 := make([]byte, 16)
-								copy(ip6[:], result.(DomainIP).Addresses[i][:12])
-								copy(ip6[12:], ip.To4())
-								addresses[i] = ip6[:]
-							}
-						} else {
-							copy(addresses, result.(DomainIP).Addresses)
-						}
+						copy(addresses, result.(DomainIP).Addresses)
 					} else {
 						addresses = []net.IP{ip}
 					}

@@ -16,7 +16,10 @@ type DomainIP struct {
 }
 
 var DNS string = ""
-var DNSCache sync.Map
+var ACache sync.Map
+var AAAACache sync.Map
+var Nose []string = []string{"phantom.socks"}
+var NoseLock sync.Mutex
 
 func TCPlookup(request []byte, address string) ([]byte, error) {
 	data := make([]byte, 1024)
@@ -590,11 +593,44 @@ func PackRequest(name string, qtype uint16, ecs string) []byte {
 	return Request[:length]
 }
 
-func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
-	result, ok := DNSCache.Load(name)
+func LoadDNSCache(qname string, qtype uint16) (DomainIP, bool) {
+	var ok bool
+	var result interface{}
+	var answer DomainIP = DomainIP{0, nil}
+	switch qtype {
+	case 1:
+		result, ok = ACache.Load(qname)
+	case 28:
+		result, ok = AAAACache.Load(qname)
+	default:
+		return answer, false
+	}
+
 	if ok {
-		ans := result.(DomainIP)
-		return ans.Index, ans.Addresses
+		answer = result.(DomainIP)
+	}
+
+	return answer, ok
+}
+
+func StoreDNSCache(qname string, qtype uint16, answer DomainIP) {
+	switch qtype {
+	case 1:
+		ACache.Store(qname, answer)
+	case 28:
+		AAAACache.Store(qname, answer)
+	}
+}
+
+func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
+	if qtype != 1 && qtype != 28 {
+		return 0, nil
+	}
+
+	answer, ok := LoadDNSCache(name, qtype)
+	if ok {
+		logPrintln(3, "cached:", name, qtype, answer.Addresses)
+		return answer.Index, answer.Addresses
 	}
 	offset := 0
 	for i := 0; i < SubdomainDepth; i++ {
@@ -603,12 +639,11 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 			break
 		}
 		offset += off
-		result, ok := DNSCache.Load(name[offset:])
+		answer, ok := LoadDNSCache(name[offset:], qtype)
 
 		if ok {
-			ans := result.(DomainIP)
-			logPrintln(3, "cached:", name, qtype, ans.Addresses)
-			return ans.Index, ans.Addresses
+			logPrintln(3, "cached:", name, qtype, i, answer.Addresses)
+			return answer.Index, answer.Addresses
 		}
 		offset++
 	}
@@ -636,9 +671,12 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 			request = PackRequest(name, qtype, options.ECS)
 			response, err = TLSlookup(request, _server[2])
 		default:
+			NoseLock.Lock()
 			index := len(Nose)
-			DNSCache.Store(name, DomainIP{index, nil})
 			Nose = append(Nose, name)
+			NoseLock.Unlock()
+			StoreDNSCache(name, 1, DomainIP{index, nil})
+			StoreDNSCache(name, 28, DomainIP{0, nil})
 			return index, nil
 		}
 	}
@@ -656,9 +694,11 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 	}
 	logPrintln(3, name, qtype, ips)
 
+	NoseLock.Lock()
 	index := len(Nose)
-	DNSCache.Store(name, DomainIP{index, ips})
 	Nose = append(Nose, name)
+	NoseLock.Unlock()
+	StoreDNSCache(name, qtype, DomainIP{index, ips})
 
 	return index, ips
 }
@@ -670,16 +710,16 @@ func NSRequest(request []byte) []byte {
 		return nil
 	}
 
-	result, ok := DNSCache.Load(name)
+	if qtype != 1 && qtype != 28 {
+		return BuildResponse(request, nil, qtype)
+	}
+
+	answer, ok := LoadDNSCache(name, uint16(qtype))
 	if ok {
-		ans := result.(DomainIP)
-		if ans.Index > 0 {
-			if qtype == 28 {
-				return BuildResponse(request, nil, qtype)
-			}
-			return BuildLie(request, ans.Index, qtype)
+		if answer.Index > 0 {
+			return BuildLie(request, answer.Index, qtype)
 		} else {
-			return BuildResponse(request, ans.Addresses, qtype)
+			return BuildResponse(request, answer.Addresses, qtype)
 		}
 	}
 	offset := 0
@@ -689,17 +729,13 @@ func NSRequest(request []byte) []byte {
 			break
 		}
 		offset += off
-		result, ok := DNSCache.Load(name[offset:])
+		answer, ok := LoadDNSCache(name[offset:], uint16(qtype))
 		if ok {
-			ans := result.(DomainIP)
-			logPrintln(3, "cached:", name, qtype, ans.Addresses)
-			if ans.Index > 0 {
-				if qtype == 28 {
-					break
-				}
-				return BuildLie(request, ans.Index, qtype)
+			logPrintln(3, "cached:", name, qtype, answer.Addresses)
+			if answer.Index > 0 {
+				return BuildLie(request, answer.Index, qtype)
 			} else {
-				return BuildResponse(request, ans.Addresses, qtype)
+				return BuildResponse(request, answer.Addresses, qtype)
 			}
 		}
 		offset++
@@ -752,9 +788,12 @@ func NSRequest(request []byte) []byte {
 				request = PackRequest(name, _qtype, options.ECS)
 				response, err = TLSlookup(request, serverAddr[2])
 			default:
+				NoseLock.Lock()
 				index := len(Nose)
-				DNSCache.Store(name, DomainIP{index, nil})
 				Nose = append(Nose, name)
+				NoseLock.Unlock()
+				StoreDNSCache(name, 1, DomainIP{index, nil})
+				StoreDNSCache(name, 28, DomainIP{0, nil})
 				return BuildLie(request, index, qtype)
 			}
 		} else {
@@ -787,22 +826,27 @@ func NSRequest(request []byte) []byte {
 			if qtype == 28 {
 				return BuildResponse(request, nil, qtype)
 			}
+			NoseLock.Lock()
 			index := len(Nose)
-			DNSCache.Store(name, DomainIP{index, ips})
 			Nose = append(Nose, name)
+			NoseLock.Unlock()
+			StoreDNSCache(name, 1, DomainIP{index, ips})
+			StoreDNSCache(name, 28, DomainIP{0, nil})
 			return BuildLie(request, index, qtype)
 		} else {
-			DNSCache.Store(name, DomainIP{0, ips})
+			StoreDNSCache(name, uint16(qtype), DomainIP{0, ips})
 			response = BuildResponse(request, ips, qtype)
 		}
 	} else {
 		index := 0
 		if method != 0 {
+			NoseLock.Lock()
 			index = len(Nose)
 			Nose = append(Nose, name)
+			NoseLock.Unlock()
 			return BuildLie(request, index, qtype)
 		}
-		DNSCache.Store(name, DomainIP{index, ips})
+		StoreDNSCache(name, uint16(qtype), DomainIP{index, ips})
 	}
 
 	return response
