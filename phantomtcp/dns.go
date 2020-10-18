@@ -815,7 +815,7 @@ func NSRequest(request []byte) []byte {
 	}
 
 	ips := getAnswers(response)
-	logPrintln(3, name, qtype, ips)
+	logPrintln(3, "response:", name, qtype, ips)
 
 	if options.PD != "" {
 		for i, ip := range ips {
@@ -832,7 +832,7 @@ func NSRequest(request []byte) []byte {
 			NoseLock.Unlock()
 			StoreDNSCache(name, 1, DomainIP{index, ips})
 			StoreDNSCache(name, 28, DomainIP{0, nil})
-			return BuildLie(request, index, qtype)
+			response = BuildLie(request, index, qtype)
 		} else {
 			StoreDNSCache(name, uint16(qtype), DomainIP{0, ips})
 			response = BuildResponse(request, ips, qtype)
@@ -840,11 +840,14 @@ func NSRequest(request []byte) []byte {
 	} else {
 		index := 0
 		if method != 0 {
+			if qtype == 28 {
+				return BuildResponse(request, nil, qtype)
+			}
 			NoseLock.Lock()
 			index = len(Nose)
 			Nose = append(Nose, name)
 			NoseLock.Unlock()
-			return BuildLie(request, index, qtype)
+			response = BuildLie(request, index, qtype)
 		}
 		StoreDNSCache(name, uint16(qtype), DomainIP{index, ips})
 	}
