@@ -494,7 +494,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 		proxyhost = net.JoinHostPort(proxyhost, strconv.Itoa(port))
 	}
 
-	if conf != nil {
+	if b != nil && conf != nil {
 		if conf.Option&OPT_HTTP != 0 {
 			var request_host string = ""
 			if b[0] == 0x16 {
@@ -650,6 +650,8 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 				conn.Close()
 			}
 		}
+		return conn, err
+	} else if b == nil {
 		return conn, err
 	}
 

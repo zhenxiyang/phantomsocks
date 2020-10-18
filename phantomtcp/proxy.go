@@ -569,14 +569,19 @@ func RedirectProxy(client net.Conn) {
 		} else {
 			logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, config)
 
-			var b [1500]byte
-			n, err := client.Read(b[:])
-			if err != nil {
-				logPrintln(1, err)
-				return
+			if config.Option == OPT_PROXY {
+				conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, nil)
+			} else {
+				var b [1500]byte
+				n, err := client.Read(b[:])
+				if err != nil {
+					logPrintln(1, err)
+					return
+				}
+
+				conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, b[:n], &config)
 			}
 
-			conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, b[:n], &config)
 			if err != nil {
 				logPrintln(1, host, err)
 				return
