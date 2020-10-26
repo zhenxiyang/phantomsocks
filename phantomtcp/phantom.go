@@ -317,6 +317,14 @@ func LoadConfig(filename string) error {
 						}
 						server = keys[1]
 						logPrintln(2, string(line))
+					} else if keys[0] == "dns-min-ttl" {
+						ttl, err := strconv.Atoi(keys[1])
+						if err != nil {
+							log.Println(string(line), err)
+							return err
+						}
+						DNSMinTTL = uint32(ttl)
+						logPrintln(2, string(line))
 					} else if keys[0] == "method" {
 						option = OPT_NONE
 						methods := strings.Split(keys[1], ",")
@@ -506,11 +514,11 @@ func LoadHosts(filename string) error {
 			}
 			ip4 := ip.To4()
 			if ip4 != nil {
-				ACache.Store(name, DomainIP{index, []net.IP{ip4}})
-				AAAACache.Store(name, DomainIP{0, nil})
+				ACache.Store(name, DomainIP{index, 0, []net.IP{ip4}})
+				AAAACache.Store(name, DomainIP{0, 0, nil})
 			} else {
-				AAAACache.Store(name, DomainIP{index, []net.IP{ip}})
-				ACache.Store(name, DomainIP{0, nil})
+				AAAACache.Store(name, DomainIP{index, 0, []net.IP{ip}})
+				ACache.Store(name, DomainIP{0, 0, nil})
 			}
 		}
 	}

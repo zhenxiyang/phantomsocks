@@ -111,7 +111,7 @@ func DNSServer(listenAddr string) error {
 		request := make([]byte, n)
 		copy(request, data[:n])
 		go func(clientAddr *net.UDPAddr, request []byte) {
-			response := ptcp.NSRequest(request)
+			response := ptcp.NSRequest(request, true)
 			conn.WriteToUDP(response, clientAddr)
 		}(clientAddr, request)
 	}

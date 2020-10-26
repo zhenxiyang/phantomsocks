@@ -12,10 +12,12 @@ import (
 
 type DomainIP struct {
 	Index     int
+	TTL       int64
 	Addresses []net.IP
 }
 
 var DNS string = ""
+var DNSMinTTL uint32 = 0
 var ACache sync.Map
 var AAAACache sync.Map
 var Nose []string = []string{"phantom.socks"}
@@ -306,51 +308,60 @@ func GetNameOffset(response []byte, offset int) int {
 	return offset
 }
 
-func getAnswers(response []byte) []net.IP {
+func getAnswers(response []byte) ([]net.IP, int64) {
 	responseLen := len(response)
 
 	offset := 12
 	if offset > responseLen {
-		return nil
+		return nil, 0
 	}
 
 	QDCount := int(binary.BigEndian.Uint16(response[4:6]))
 	ANCount := int(binary.BigEndian.Uint16(response[6:8]))
 
 	if ANCount == 0 {
-		return nil
+		return nil, 0
 	}
 
 	for i := 0; i < QDCount; i++ {
 		_offset := GetNameOffset(response, offset)
 		if _offset == 0 {
-			return nil
+			return nil, 0
 		}
 		offset = _offset + 4
 	}
 
 	ips := make([]net.IP, 0)
+	var ttl uint32 = 65535
 	cname := ""
 	for i := 0; i < ANCount; i++ {
 		_offset := GetNameOffset(response, offset)
 		if _offset == 0 {
-			return nil
+			return nil, 0
 		}
 		offset = _offset
 		if offset+2 > responseLen {
-			return nil
+			return nil, 0
 		}
 		AType := binary.BigEndian.Uint16(response[offset : offset+2])
-		offset += 8
+		offset += 4
+		if offset+4 > responseLen {
+			return nil, 0
+		}
+		TTL := binary.BigEndian.Uint32(response[offset : offset+4])
+		if TTL < ttl {
+			ttl = TTL
+		}
+		offset += 4
 		if offset+2 > responseLen {
-			return nil
+			return nil, 0
 		}
 		DataLength := binary.BigEndian.Uint16(response[offset : offset+2])
 		offset += 2
 
 		if AType == 1 {
 			if offset+4 > responseLen {
-				return nil
+				return nil, 0
 			}
 			data := response[offset : offset+4]
 			ip := net.IPv4(data[0], data[1], data[2], data[3])
@@ -358,7 +369,7 @@ func getAnswers(response []byte) []net.IP {
 		} else if AType == 28 {
 			var data [16]byte
 			if offset+16 > responseLen {
-				return nil
+				return nil, 0
 			}
 			copy(data[:], response[offset:offset+16])
 			ip := net.IP(response[offset : offset+16])
@@ -375,10 +386,14 @@ func getAnswers(response []byte) []net.IP {
 	//	_, ips = NSLookup(cname, qtype)
 	//}
 
-	return ips
+	if ttl < DNSMinTTL {
+		ttl = DNSMinTTL
+	}
+
+	return ips, int64(ttl) + time.Now().Unix()
 }
 
-func packAnswers(ips []net.IP, qtype int) (int, []byte) {
+func packAnswers(qtype int, ttl uint32, ips []net.IP) (int, []byte) {
 	totalLen := 0
 	count := 0
 	for _, ip := range ips {
@@ -402,18 +417,25 @@ func packAnswers(ips []net.IP, qtype int) (int, []byte) {
 		ip4 := ip.To4()
 		if ip4 != nil {
 			if qtype == 1 {
-				answer := []byte{0xC0, 0x0C, 0x00, 1,
-					0x00, 0x01, 0x00, 0x00, 0x0E, 0x10, 0x00, 0x04,
-					ip4[0], ip4[1], ip4[2], ip4[3]}
-				copy(answers[length:], answer)
-				length += 16
+				copy(answers[length:], []byte{0xC0, 0x0C, 0x00, 1,
+					0x00, 0x01})
+				length += 6
+				binary.BigEndian.PutUint32(answers[length:], ttl)
+				length += 4
+				copy(answers[length:], []byte{0x00, 0x04})
+				length += 2
+				copy(answers[length:], ip4)
+				length += 4
 			}
 		} else {
 			if qtype == 28 {
-				answer := []byte{0xC0, 0x0C, 0x00, 28,
-					0x00, 0x01, 0x00, 0x00, 0x0E, 0x10, 0x00, 0x10}
-				copy(answers[length:], answer)
-				length += 12
+				copy(answers[length:], []byte{0xC0, 0x0C, 0x00, 28,
+					0x00, 0x01})
+				length += 6
+				binary.BigEndian.PutUint32(answers[length:], ttl)
+				length += 4
+				copy(answers[length:], []byte{0x00, 0x10})
+				length += 2
 				copy(answers[length:], ip)
 				length += 16
 			}
@@ -423,7 +445,7 @@ func packAnswers(ips []net.IP, qtype int) (int, []byte) {
 	return count, answers
 }
 
-func BuildResponse(request []byte, ips []net.IP, qtype int) []byte {
+func BuildResponse(request []byte, qtype int, ttl uint32, ips []net.IP) []byte {
 	response := make([]byte, 1024)
 	copy(response, request)
 	length := len(request)
@@ -434,7 +456,7 @@ func BuildResponse(request []byte, ips []net.IP, qtype int) []byte {
 		return response[:length]
 	}
 
-	count, answer := packAnswers(ips, qtype)
+	count, answer := packAnswers(qtype, ttl, ips)
 	binary.BigEndian.PutUint16(response[6:], uint16(count))
 	if count > 0 {
 		copy(response[length:], answer)
@@ -596,7 +618,7 @@ func PackRequest(name string, qtype uint16, ecs string) []byte {
 func LoadDNSCache(qname string, qtype uint16) (DomainIP, bool) {
 	var ok bool
 	var result interface{}
-	var answer DomainIP = DomainIP{0, nil}
+	var answer DomainIP = DomainIP{0, 0, nil}
 	switch qtype {
 	case 1:
 		result, ok = ACache.Load(qname)
@@ -675,8 +697,8 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 			index := len(Nose)
 			Nose = append(Nose, name)
 			NoseLock.Unlock()
-			StoreDNSCache(name, 1, DomainIP{index, nil})
-			StoreDNSCache(name, 28, DomainIP{0, nil})
+			StoreDNSCache(name, 1, DomainIP{index, 0, nil})
+			StoreDNSCache(name, 28, DomainIP{0, 0, nil})
 			return index, nil
 		}
 	}
@@ -685,7 +707,8 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 		return 0, nil
 	}
 
-	ips := getAnswers(response)
+	ips, ttl := getAnswers(response)
+	var dns_ttl int64 = int64(ttl) + time.Now().Unix()
 
 	if options.PD != "" {
 		for i, ip := range ips {
@@ -698,12 +721,12 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 	index := len(Nose)
 	Nose = append(Nose, name)
 	NoseLock.Unlock()
-	StoreDNSCache(name, qtype, DomainIP{index, ips})
+	StoreDNSCache(name, qtype, DomainIP{index, dns_ttl, ips})
 
 	return index, ips
 }
 
-func NSRequest(request []byte) []byte {
+func NSRequest(request []byte, cache bool) []byte {
 	name, qtype, _ := GetQName(request)
 	if name == "" {
 		logPrintln(2, "DNS Segmentation fault")
@@ -711,34 +734,44 @@ func NSRequest(request []byte) []byte {
 	}
 
 	if qtype != 1 && qtype != 28 {
-		return BuildResponse(request, nil, qtype)
+		return BuildResponse(request, qtype, 3600, nil)
 	}
 
-	answer, ok := LoadDNSCache(name, uint16(qtype))
-	if ok {
-		if answer.Index > 0 {
-			return BuildLie(request, answer.Index, qtype)
-		} else {
-			return BuildResponse(request, answer.Addresses, qtype)
-		}
-	}
-	offset := 0
-	for i := 0; i < SubdomainDepth; i++ {
-		off := strings.Index(name[offset:], ".")
-		if off == -1 {
-			break
-		}
-		offset += off
-		answer, ok := LoadDNSCache(name[offset:], uint16(qtype))
+	if cache {
+		answer, ok := LoadDNSCache(name, uint16(qtype))
 		if ok {
-			logPrintln(3, "cached:", name, qtype, answer.Addresses)
+			var ttl int64 = 256
+			if answer.TTL > 0 {
+				ttl = answer.TTL - time.Now().Unix()
+				if ttl < 0 {
+					go NSRequest(request, false)
+				}
+			}
 			if answer.Index > 0 {
 				return BuildLie(request, answer.Index, qtype)
 			} else {
-				return BuildResponse(request, answer.Addresses, qtype)
+				return BuildResponse(request, qtype, uint32(ttl), answer.Addresses)
 			}
 		}
-		offset++
+
+		offset := 0
+		for i := 0; i < SubdomainDepth; i++ {
+			off := strings.Index(name[offset:], ".")
+			if off == -1 {
+				break
+			}
+			offset += off
+			answer, ok := LoadDNSCache(name[offset:], uint16(qtype))
+			if ok {
+				logPrintln(3, "cached:", name, qtype, answer.Addresses)
+				if answer.Index > 0 {
+					return BuildLie(request, answer.Index, qtype)
+				} else {
+					return BuildResponse(request, qtype, 3600, answer.Addresses)
+				}
+			}
+			offset++
+		}
 	}
 
 	var response []byte
@@ -763,15 +796,15 @@ func NSRequest(request []byte) []byte {
 	}
 
 	if options.Type == "A" && qtype == 28 {
-		return BuildResponse(request, nil, qtype)
+		return BuildResponse(request, qtype, 0, nil)
 	} else if options.Type == "AAAA" && qtype == 1 {
-		return BuildResponse(request, nil, qtype)
+		return BuildResponse(request, qtype, 0, nil)
 	}
 
 	if len(serverAddr) > 2 {
 		if method != 0 {
 			if qtype == 28 {
-				return BuildResponse(request, nil, qtype)
+				return BuildResponse(request, qtype, 0, nil)
 			}
 			_qtype := uint16(qtype)
 			if method&OPT_IPV6 != 0 {
@@ -792,8 +825,8 @@ func NSRequest(request []byte) []byte {
 				index := len(Nose)
 				Nose = append(Nose, name)
 				NoseLock.Unlock()
-				StoreDNSCache(name, 1, DomainIP{index, nil})
-				StoreDNSCache(name, 28, DomainIP{0, nil})
+				StoreDNSCache(name, 1, DomainIP{index, 0, nil})
+				StoreDNSCache(name, 28, DomainIP{0, 0, nil})
 				return BuildLie(request, index, qtype)
 			}
 		} else {
@@ -814,7 +847,7 @@ func NSRequest(request []byte) []byte {
 		return nil
 	}
 
-	ips := getAnswers(response)
+	ips, ttl := getAnswers(response)
 	logPrintln(3, "response:", name, qtype, ips)
 
 	if options.PD != "" {
@@ -824,24 +857,24 @@ func NSRequest(request []byte) []byte {
 
 		if method != 0 {
 			if qtype == 28 {
-				return BuildResponse(request, nil, qtype)
+				return BuildResponse(request, qtype, 0, nil)
 			}
 			NoseLock.Lock()
 			index := len(Nose)
 			Nose = append(Nose, name)
 			NoseLock.Unlock()
-			StoreDNSCache(name, 1, DomainIP{index, ips})
-			StoreDNSCache(name, 28, DomainIP{0, nil})
+			StoreDNSCache(name, 1, DomainIP{index, ttl, ips})
+			StoreDNSCache(name, 28, DomainIP{0, 0, nil})
 			response = BuildLie(request, index, qtype)
 		} else {
-			StoreDNSCache(name, uint16(qtype), DomainIP{0, ips})
-			response = BuildResponse(request, ips, qtype)
+			StoreDNSCache(name, uint16(qtype), DomainIP{0, ttl, ips})
+			response = BuildResponse(request, qtype, 0, ips)
 		}
 	} else {
 		index := 0
 		if method != 0 {
 			if qtype == 28 {
-				return BuildResponse(request, nil, qtype)
+				return BuildResponse(request, qtype, 0, nil)
 			}
 			NoseLock.Lock()
 			index = len(Nose)
@@ -849,7 +882,7 @@ func NSRequest(request []byte) []byte {
 			NoseLock.Unlock()
 			response = BuildLie(request, index, qtype)
 		}
-		StoreDNSCache(name, uint16(qtype), DomainIP{index, ips})
+		StoreDNSCache(name, uint16(qtype), DomainIP{index, ttl, ips})
 	}
 
 	return response
