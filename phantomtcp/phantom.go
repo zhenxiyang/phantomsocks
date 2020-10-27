@@ -426,8 +426,13 @@ func LoadConfig(filename string) error {
 					}
 				} else {
 					addr, err := net.ResolveTCPAddr("tcp", keys[0])
-					if err == nil {
-						DomainMap[addr.IP.String()] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+					if err != nil {
+						if server == "" {
+							ACache.Store(keys[0], DomainIP{0, 0, nil})
+							AAAACache.Store(keys[0], DomainIP{0, 0, nil})
+						} else {
+							DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+						}
 					} else {
 						if strings.Index(keys[0], "/") > 0 {
 							_, ipnet, err := net.ParseCIDR(keys[0])
@@ -435,7 +440,7 @@ func LoadConfig(filename string) error {
 								DomainMap[ipnet.String()] = Config{option, minTTL, maxTTL, syncMSS, server, device}
 							}
 						} else {
-							DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+							DomainMap[addr.IP.String()] = Config{option, minTTL, maxTTL, syncMSS, server, device}
 						}
 					}
 				}

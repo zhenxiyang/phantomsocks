@@ -9,7 +9,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"runtime"
 	"strings"
 
 	ptcp "./phantomtcp"
@@ -118,7 +117,7 @@ func DNSServer(listenAddr string) error {
 }
 
 func main() {
-	runtime.GOMAXPROCS(1)
+	//runtime.GOMAXPROCS(1)
 	//log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	var flags struct {

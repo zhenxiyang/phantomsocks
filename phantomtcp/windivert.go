@@ -474,9 +474,9 @@ func RedirectDNS() {
 
 			var response []byte
 			if qtype == 28 {
-				response = BuildResponse(request, nil, qtype)
+				response = BuildResponse(request, qtype, 0, nil)
 			} else {
-				response = BuildLie(request, index, qtype)
+				response = BuildLie(request, qtype, index)
 			}
 			udpsize := len(response) + 8
 

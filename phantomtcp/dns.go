@@ -466,7 +466,7 @@ func BuildResponse(request []byte, qtype int, ttl uint32, ips []net.IP) []byte {
 	return response[:length]
 }
 
-func BuildLie(request []byte, id int, qtype int) []byte {
+func BuildLie(request []byte, qtype int, id int) []byte {
 	response := make([]byte, 1024)
 	copy(response, request)
 	length := len(request)
@@ -748,7 +748,7 @@ func NSRequest(request []byte, cache bool) []byte {
 				}
 			}
 			if answer.Index > 0 {
-				return BuildLie(request, answer.Index, qtype)
+				return BuildLie(request, qtype, answer.Index)
 			} else {
 				return BuildResponse(request, qtype, uint32(ttl), answer.Addresses)
 			}
@@ -765,7 +765,7 @@ func NSRequest(request []byte, cache bool) []byte {
 			if ok {
 				logPrintln(3, "cached:", name, qtype, answer.Addresses)
 				if answer.Index > 0 {
-					return BuildLie(request, answer.Index, qtype)
+					return BuildLie(request, qtype, answer.Index)
 				} else {
 					return BuildResponse(request, qtype, 3600, answer.Addresses)
 				}
@@ -827,7 +827,7 @@ func NSRequest(request []byte, cache bool) []byte {
 				NoseLock.Unlock()
 				StoreDNSCache(name, 1, DomainIP{index, 0, nil})
 				StoreDNSCache(name, 28, DomainIP{0, 0, nil})
-				return BuildLie(request, index, qtype)
+				return BuildLie(request, qtype, index)
 			}
 		} else {
 			switch serverAddr[0] {
@@ -841,7 +841,10 @@ func NSRequest(request []byte, cache bool) []byte {
 				return nil
 			}
 		}
+	} else {
+		return nil
 	}
+
 	if err != nil {
 		logPrintln(1, err)
 		return nil
@@ -865,7 +868,7 @@ func NSRequest(request []byte, cache bool) []byte {
 			NoseLock.Unlock()
 			StoreDNSCache(name, 1, DomainIP{index, ttl, ips})
 			StoreDNSCache(name, 28, DomainIP{0, 0, nil})
-			response = BuildLie(request, index, qtype)
+			response = BuildLie(request, qtype, index)
 		} else {
 			StoreDNSCache(name, uint16(qtype), DomainIP{0, ttl, ips})
 			response = BuildResponse(request, qtype, 0, ips)
@@ -880,7 +883,7 @@ func NSRequest(request []byte, cache bool) []byte {
 			index = len(Nose)
 			Nose = append(Nose, name)
 			NoseLock.Unlock()
-			response = BuildLie(request, index, qtype)
+			response = BuildLie(request, qtype, index)
 		}
 		StoreDNSCache(name, uint16(qtype), DomainIP{index, ttl, ips})
 	}
