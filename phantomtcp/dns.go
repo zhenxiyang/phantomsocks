@@ -748,7 +748,10 @@ func NSRequest(request []byte, cache bool) []byte {
 				}
 			}
 			if answer.Index > 0 {
-				return BuildLie(request, qtype, answer.Index)
+				if qtype == 1 {
+					return BuildLie(request, qtype, answer.Index)
+				}
+				return BuildResponse(request, qtype, 0, nil)
 			} else {
 				return BuildResponse(request, qtype, uint32(ttl), answer.Addresses)
 			}
@@ -765,7 +768,10 @@ func NSRequest(request []byte, cache bool) []byte {
 			if ok {
 				logPrintln(3, "cached:", name, qtype, answer.Addresses)
 				if answer.Index > 0 {
-					return BuildLie(request, qtype, answer.Index)
+					if qtype == 1 {
+						return BuildLie(request, qtype, answer.Index)
+					}
+					return BuildResponse(request, qtype, 0, nil)
 				} else {
 					return BuildResponse(request, qtype, 3600, answer.Addresses)
 				}
