@@ -594,6 +594,14 @@ func RedirectProxy(client net.Conn) {
 	}
 
 	defer conn.Close()
-	go io.Copy(client, conn)
-	io.Copy(conn, client)
+
+	//go io.Copy(client, conn)
+	//io.Copy(conn, client)
+	_, _, err := relay(client, conn)
+	if err != nil {
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			return // ignore i/o timeout
+		}
+		logPrintln(1, "relay error: %v", err)
+	}
 }
