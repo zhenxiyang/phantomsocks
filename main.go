@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -128,6 +129,7 @@ func main() {
 		PacListenAddr   string `json:"pac,omitempty"`
 		SniListenAddr   string `json:"sni,omitempty"`
 		RedirectAddr    string `json:"redir,omitempty"`
+		SSListenAddr    string `json:"ss,omitempty"`
 		SystemProxy     string `json:"proxy,omitempty"`
 		DnsListenAddr   string `json:"dns,omitempty"`
 		Device          string `json:"device,omitempty"`
@@ -142,6 +144,7 @@ func main() {
 		flag.StringVar(&flags.HttpListenAddr, "http", "", "HTTP")
 		flag.StringVar(&flags.PacListenAddr, "pac", "", "PACServer")
 		flag.StringVar(&flags.SniListenAddr, "sni", "", "SNIProxy")
+		flag.StringVar(&flags.SSListenAddr, "ss", "", "Shadowsocks")
 		flag.StringVar(&flags.RedirectAddr, "redir", "", "Redirect")
 		flag.StringVar(&flags.SystemProxy, "proxy", "", "Proxy")
 		flag.StringVar(&flags.DnsListenAddr, "dns", "", "DNS")
@@ -223,6 +226,15 @@ func main() {
 	if flags.SniListenAddr != "" {
 		fmt.Println("SNI:", flags.SniListenAddr)
 		go ListenAndServe(flags.SniListenAddr, ptcp.SNIProxy)
+	}
+
+	if flags.SSListenAddr != "" {
+		addr := flags.SSListenAddr
+		if strings.HasPrefix(addr, "ss://") {
+			accesskey := base64.StdEncoding.EncodeToString([]byte(addr[5:]))
+			fmt.Println("ss://" + accesskey)
+			ptcp.ShadowsocksServer(flags.SSListenAddr)
+		}
 	}
 
 	if flags.RedirectAddr != "" {
