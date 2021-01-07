@@ -489,30 +489,33 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 	var method uint32 = 0
 
 	host, port := splitHostPort(address)
-	_, proxyport := splitHostPort(proxyhost)
+	proxyaddr, proxyport := splitHostPort(proxyhost)
 	if proxyport == 0 {
-		proxyhost = net.JoinHostPort(proxyhost, strconv.Itoa(port))
-	}
-
-	if b != nil && conf != nil {
-		if conf.Option&OPT_HTTP != 0 {
-			var request_host string = ""
-			if b[0] == 0x16 {
-				offset, length := GetSNI(b)
-				request_host = string(b[offset : offset+length])
-			} else {
-				offset, length := GetHost(b)
-				request_host = string(b[offset : offset+length])
-			}
-			if host != request_host {
-				return nil, proxy_err
-			}
+		if scheme == "nat64" {
+			proxyhost = net.JoinHostPort(proxyaddr+host, strconv.Itoa(port))
+		} else {
+			proxyhost = net.JoinHostPort(proxyaddr, strconv.Itoa(port))
 		}
-		method = conf.Option & OPT_MODIFY
 	}
 
-	if method != 0 {
-		method = conf.Option
+	if conf != nil {
+		if b != nil {
+			if conf.Option&OPT_HTTP != 0 {
+				var request_host string = ""
+				if b[0] == 0x16 {
+					offset, length := GetSNI(b)
+					request_host = string(b[offset : offset+length])
+				} else {
+					offset, length := GetHost(b)
+					request_host = string(b[offset : offset+length])
+				}
+				if host != request_host {
+					return nil, proxy_err
+				}
+			}
+			method = conf.Option & OPT_MODIFY
+		}
+
 		raddr, err := net.ResolveTCPAddr("tcp", proxyhost)
 		if err != nil {
 			return nil, err
@@ -522,18 +525,26 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 			return nil, err
 		}
 
-		conn, synpacket, err = DialConnInfo(laddr, raddr, conf, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		if synpacket == nil {
-			if conn != nil {
-				conn.Close()
+		if method != 0 {
+			method = conf.Option
+			conn, synpacket, err = DialConnInfo(laddr, raddr, conf, nil)
+			if err != nil {
+				return nil, err
 			}
-			return nil, errors.New("connection does not exist")
+
+			if synpacket == nil {
+				if conn != nil {
+					conn.Close()
+				}
+				return nil, errors.New("connection does not exist")
+			}
+			synpacket.TCP.Seq++
+		} else {
+			conn, err = net.DialTCP("tcp", laddr, raddr)
+			if err != nil {
+				return nil, err
+			}
 		}
-		synpacket.TCP.Seq++
 	} else {
 		conn, err = net.Dial("tcp", proxyhost)
 		if err != nil {
@@ -639,6 +650,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 			}
 		}
 	case "redirect":
+	case "nat64":
 	default:
 		return nil, proxy_err
 	}

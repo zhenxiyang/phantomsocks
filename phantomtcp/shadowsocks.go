@@ -49,6 +49,9 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			var host string
 			var port int
 
+			var config Config
+			var ok = false
+
 			switch b[0] {
 			case socks.AtypDomainName:
 				_, err = io.ReadFull(c, b[1:2]) // read 2nd byte for domain length
@@ -61,6 +64,8 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 				}
 				host = string(b[2 : 2+b[1]])
 				port = int(binary.BigEndian.Uint16(b[2+b[1] : 2+b[1]+2]))
+
+				config, ok = ConfigLookup(host)
 			case socks.AtypIPv4:
 				_, err = io.ReadFull(c, b[1:1+net.IPv4len+2])
 				if err != nil {
@@ -91,9 +96,12 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 						return
 					}
 					host = Nose[index]
+					config, ok = ConfigLookup(host)
 				} else {
 					host = net.IPv4(b[1], b[2], b[3], b[4]).String()
+					config, ok = DomainMap[host]
 				}
+
 			case socks.AtypIPv6:
 				_, err = io.ReadFull(c, b[1:1+net.IPv6len+2])
 				if err != nil {
@@ -119,12 +127,13 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 				}
 
 				host = net.IP(b[1 : 1+net.IPv6len]).String()
+
+				config, ok = DomainMap[host]
 			default:
 				logPrintln(1, "not supported")
 				return
 			}
 
-			config, ok := ConfigLookup(host)
 			var rc net.Conn
 			if ok {
 				if config.Option&OPT_PROXY == 0 {
@@ -199,17 +208,18 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 				} else {
 					logPrintln(1, "Shadowsocks:", c.RemoteAddr(), "<->", host, port, config)
 
-					if config.Option == OPT_PROXY {
-						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, nil)
-					} else {
+					if (config.Option & OPT_MODIFY) != 0 {
 						var b [1500]byte
 						n, err := c.Read(b[:])
 						if err != nil {
 							logPrintln(1, err)
 							return
 						}
-
 						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, b[:n], &config)
+					} else if config.Device != "" {
+						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, &config)
+					} else {
+						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, nil)
 					}
 
 					if err != nil {
@@ -239,7 +249,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 				if err, ok := err.(net.Error); ok && err.Timeout() {
 					return // ignore i/o timeout
 				}
-				logPrintln(1, "relay error: %v", err)
+				logPrintln(1, "relay error:", err)
 			}
 		}()
 	}
