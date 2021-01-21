@@ -466,3 +466,21 @@ func ShadowsocksServer(addr string) {
 	go ShadowsocksUDPRemote(addr, ciph.PacketConn)
 	go ShadowsocksTCPRemote(addr, ciph.StreamConn)
 }
+
+func ShadowsocksDial(conn net.Conn, host string, port int, cipher, password string) (net.Conn, error) {
+	ciph, err := core.PickCipher(cipher, nil, password)
+	if err != nil {
+		return nil, err
+	}
+
+	conn = ciph.StreamConn(conn)
+
+	var tgt [256]byte
+	tgt[0] = socks.AtypDomainName
+	tgt[1] = byte(len(host))
+	copy(tgt[2:], []byte(host))
+	binary.BigEndian.PutUint16(tgt[tgt[1]+2:], uint16(port))
+	_, err = conn.Write(tgt[:tgt[1]+4])
+
+	return conn, err
+}

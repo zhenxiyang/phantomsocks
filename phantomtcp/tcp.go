@@ -552,6 +552,8 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 		}
 	}
 
+	defer conn.Close()
+
 	var proxy_seq uint32 = 0
 	switch scheme {
 	case "http":
@@ -648,6 +650,13 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 			if b[1] != 0x00 {
 				return nil, proxy_err
 			}
+		}
+	case "ss":
+		cipher := u.User.Username()
+		password, _ := u.User.Password()
+		conn, err = ShadowsocksDial(conn, host, port, cipher, password)
+		if err != nil {
+			return nil, err
 		}
 	case "redirect":
 	case "nat64":
