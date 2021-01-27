@@ -552,8 +552,6 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 		}
 	}
 
-	defer conn.Close()
-
 	var proxy_seq uint32 = 0
 	switch scheme {
 	case "http":
@@ -565,11 +563,13 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 				if method&OPT_SSEG != 0 {
 					n, err = conn.Write(request[:4])
 					if err != nil {
+						conn.Close()
 						return nil, err
 					}
 				} else if method&OPT_MODE2 != 0 {
 					n, err = conn.Write(request[:10])
 					if err != nil {
+						conn.Close()
 						return nil, err
 					}
 				}
@@ -577,6 +577,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 				proxy_seq += uint32(n)
 				err = ModifyAndSendPacket(synpacket, fakepayload, method, conf.TTL, 2)
 				if err != nil {
+					conn.Close()
 					return nil, err
 				}
 
@@ -588,18 +589,21 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 					n, err = conn.Write(request)
 				}
 				if err != nil {
+					conn.Close()
 					return nil, err
 				}
 				proxy_seq += uint32(n)
 			} else {
 				n, err = conn.Write(request)
 				if err != nil {
+					conn.Close()
 					return nil, err
 				}
 			}
 			var response [128]byte
 			n, err = conn.Read(response[:])
 			if err != nil || !strings.HasPrefix(string(response[:n]), "HTTP/1.1 200 ") {
+				conn.Close()
 				return nil, errors.New("failed to connect to proxy")
 			}
 		}
@@ -609,21 +613,25 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 			if method != 0 {
 				err := ModifyAndSendPacket(synpacket, b[:], method, conf.TTL, 2)
 				if err != nil {
+					conn.Close()
 					return nil, err
 				}
 			}
 
 			n, err := conn.Write([]byte{0x05, 0x01, 0x00})
 			if err != nil {
+				conn.Close()
 				return nil, err
 			}
 			proxy_seq += uint32(n)
 			_, err = conn.Read(b[:])
 			if err != nil {
+				conn.Close()
 				return nil, err
 			}
 
 			if b[0] != 0x05 {
+				conn.Close()
 				return nil, proxy_err
 			}
 
@@ -634,20 +642,25 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 			binary.BigEndian.PutUint16(b[5+hostLen:], uint16(port))
 			n, err = conn.Write(b[:7+hostLen])
 			if err != nil {
+				conn.Close()
 				return nil, err
 			}
 			proxy_seq += uint32(n)
 			n, err = conn.Read(b[:])
 			if err != nil {
+				conn.Close()
 				return nil, err
 			}
 			if n < 2 {
+				conn.Close()
 				return nil, proxy_err
 			}
 			if b[0] != 0x05 {
+				conn.Close()
 				return nil, proxy_err
 			}
 			if b[1] != 0x00 {
+				conn.Close()
 				return nil, proxy_err
 			}
 		}
@@ -656,11 +669,13 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 		password, _ := u.User.Password()
 		conn, err = ShadowsocksDial(conn, host, port, cipher, password)
 		if err != nil {
+			conn.Close()
 			return nil, err
 		}
 	case "redirect":
 	case "nat64":
 	default:
+		conn.Close()
 		return nil, proxy_err
 	}
 

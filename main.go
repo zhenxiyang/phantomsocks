@@ -12,8 +12,8 @@ import (
 	"os/signal"
 	"strings"
 
-	ptcp "github.com/macronut/phantomsocks/phantomtcp"
-	proxy "github.com/macronut/phantomsocks/proxy"
+	ptcp "./phantomtcp"
+	proxy "./proxy"
 )
 
 var allowlist map[string]bool = nil
