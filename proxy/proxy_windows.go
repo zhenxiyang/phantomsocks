@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	ptcp "../phantomtcp"
+	ptcp "github.com/macronut/phantomsocks/phantomtcp"
 )
 
 func SetProxy(dev, address string, state bool) error {
