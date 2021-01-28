@@ -1,6 +1,7 @@
 package phantomtcp
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -667,6 +668,19 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 	case "ss":
 		cipher := u.User.Username()
 		password, _ := u.User.Password()
+		if u.Path != "" {
+			extHeader, err := base64.StdEncoding.DecodeString(u.Path)
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+			_, err = conn.Write(extHeader)
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+		}
+
 		conn, err = ShadowsocksDial(conn, host, port, cipher, password)
 		if err != nil {
 			conn.Close()
