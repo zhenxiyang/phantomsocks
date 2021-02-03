@@ -3,6 +3,7 @@ package proxy
 import (
 	"io/ioutil"
 	"net"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -28,28 +29,30 @@ func RunCmd(cmd *exec.Cmd, arg ...string) (string, error) {
 	}
 }
 
-func SetProxy(dev, address string, state bool) error {
+func SetProxy(dev, proxy string, state bool) error {
 	cmd := exec.Command("networksetup", "-listnetworkserviceorder")
 	out, err := RunCmd(cmd)
 	if err != nil {
 		return err
 	}
 
-	proxyAddr := strings.Split(address, "://")
-	if len(proxyAddr) < 2 {
-		return nil
+	u, err := url.Parse(proxy)
+	if err != nil {
+		return err
 	}
 
 	proxyProtocol := ""
 	proxyState := ""
 
-	switch proxyAddr[0] {
+	switch u.Scheme {
 	case "http":
 		proxyProtocol = "-setwebproxy"
 		proxyState = "-setwebproxystate"
 	case "socks":
 		proxyProtocol = "-setsocksfirewallproxy"
 		proxyState = "-setsocksfirewallproxystate"
+	case "dns":
+		proxyProtocol = "-setdnsservers"
 	default:
 		return nil
 	}
@@ -74,23 +77,37 @@ func SetProxy(dev, address string, state bool) error {
 	}
 
 	if state {
-		addr, err := net.ResolveTCPAddr("tcp", proxyAddr[1])
-		if err != nil {
-			return err
-		}
+		if proxyState == "" {
+			cmd = exec.Command("networksetup", proxyProtocol, name, u.Host)
+			if err := cmd.Start(); err != nil {
+				return err
+			}
+		} else {
+			addr, err := net.ResolveTCPAddr("tcp", u.Host)
+			if err != nil {
+				return err
+			}
 
-		cmd = exec.Command("networksetup", proxyProtocol, name, addr.IP.String(), strconv.Itoa(addr.Port))
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-		cmd = exec.Command("networksetup", proxyState, name, "on")
-		if err := cmd.Start(); err != nil {
-			return err
+			cmd = exec.Command("networksetup", proxyProtocol, name, addr.IP.String(), strconv.Itoa(addr.Port))
+			if err := cmd.Start(); err != nil {
+				return err
+			}
+			cmd = exec.Command("networksetup", proxyState, name, "on")
+			if err := cmd.Start(); err != nil {
+				return err
+			}
 		}
 	} else {
-		cmd := exec.Command("networksetup", proxyState, name, "off")
-		if err := cmd.Start(); err != nil {
-			return err
+		if proxyState == "" {
+			cmd := exec.Command("networksetup", proxyProtocol, name, "empty")
+			if err := cmd.Start(); err != nil {
+				return err
+			}
+		} else {
+			cmd := exec.Command("networksetup", proxyState, name, "off")
+			if err := cmd.Start(); err != nil {
+				return err
+			}
 		}
 	}
 
