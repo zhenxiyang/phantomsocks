@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 
 	ptcp "./phantomtcp"
@@ -118,7 +119,6 @@ func DNSServer(listenAddr string) error {
 }
 
 func main() {
-	//runtime.GOMAXPROCS(1)
 	//log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	var flags struct {
@@ -135,6 +135,7 @@ func main() {
 		Device          string `json:"device,omitempty"`
 		Clients         string `json:"clients,omitempty"`
 		LogLevel        int    `json:"log,omitempty"`
+		MaxProcs        int    `json:"maxprocs,omitempty"`
 	}
 
 	if len(os.Args) > 1 {
@@ -151,6 +152,7 @@ func main() {
 		flag.StringVar(&flags.Device, "device", "", "Device")
 		flag.StringVar(&flags.Clients, "clients", "", "Clients")
 		flag.IntVar(&flags.LogLevel, "log", 0, "LogLevel")
+		flag.IntVar(&flags.MaxProcs, "maxprocs", 0, "LogLevel")
 		flag.Parse()
 	} else {
 		conf, err := os.Open("phantomsocks.json")
@@ -173,6 +175,10 @@ func main() {
 		if flags.ConfigFiles == "" {
 			flags.ConfigFiles = "default.conf"
 		}
+	}
+
+	if flags.MaxProcs > 0 {
+		runtime.GOMAXPROCS(flags.MaxProcs)
 	}
 
 	devices := strings.Split(flags.Device, ",")

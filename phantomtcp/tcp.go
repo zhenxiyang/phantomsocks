@@ -473,7 +473,7 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, conf *Config)
 	return conn, err
 }
 
-func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, error) {
+func DialProxy(address string, proxy string, header []byte, conf *Config) (net.Conn, error) {
 	var err error
 	var conn net.Conn
 
@@ -500,15 +500,15 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 	}
 
 	if conf != nil {
-		if b != nil {
+		if header != nil {
 			if conf.Option&OPT_HTTP != 0 {
 				var request_host string = ""
-				if b[0] == 0x16 {
-					offset, length := GetSNI(b)
-					request_host = string(b[offset : offset+length])
+				if header[0] == 0x16 {
+					offset, length := GetSNI(header)
+					request_host = string(header[offset : offset+length])
 				} else {
-					offset, length := GetHost(b)
-					request_host = string(b[offset : offset+length])
+					offset, length := GetHost(header)
+					request_host = string(header[offset : offset+length])
 				}
 				if host != request_host {
 					return nil, proxy_err
@@ -668,6 +668,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 	case "ss":
 		cipher := u.User.Username()
 		password, _ := u.User.Password()
+
 		if u.Path != "" {
 			extHeader, err := base64.StdEncoding.DecodeString(u.Path)
 			if err != nil {
@@ -694,25 +695,25 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 	}
 
 	if method == 0 {
-		if b != nil {
-			_, err = conn.Write(b)
+		if header != nil {
+			_, err = conn.Write(header)
 			if err != nil {
 				conn.Close()
 			}
 		}
 		return conn, err
-	} else if b == nil {
+	} else if header == nil {
 		return conn, err
 	}
 
-	offset, length := GetSNI(b)
+	offset, length := GetSNI(header)
 	if length > 0 {
 		fakepaylen := 1280
-		if len(b) < fakepaylen {
-			fakepaylen = len(b)
+		if len(header) < fakepaylen {
+			fakepaylen = len(header)
 		}
 		fakepayload := make([]byte, fakepaylen)
-		copy(fakepayload, b[:fakepaylen])
+		copy(fakepayload, header[:fakepaylen])
 
 		min_dot := offset + length
 		max_dot := offset
@@ -735,7 +736,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 
 		count := 1
 		if method&OPT_SSEG != 0 {
-			_, err = conn.Write(b[:4])
+			_, err = conn.Write(header[:4])
 			if err != nil {
 				conn.Close()
 				return nil, err
@@ -756,9 +757,9 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 		}
 
 		if method&OPT_SSEG != 0 {
-			_, err = conn.Write(b[4:cut])
+			_, err = conn.Write(header[4:cut])
 		} else {
-			_, err = conn.Write(b[:cut])
+			_, err = conn.Write(header[:cut])
 		}
 		if err != nil {
 			conn.Close()
@@ -771,7 +772,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 			return nil, err
 		}
 
-		_, err = conn.Write(b[cut:])
+		_, err = conn.Write(header[cut:])
 		if err != nil {
 			conn.Close()
 			return nil, err
@@ -779,7 +780,7 @@ func DialProxy(address string, proxy string, b []byte, conf *Config) (net.Conn, 
 
 		return conn, err
 	} else {
-		_, err = conn.Write(b)
+		_, err = conn.Write(header)
 		if err != nil {
 			conn.Close()
 		}

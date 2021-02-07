@@ -43,6 +43,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			var b [MaxAddrLen]byte
 			_, err := io.ReadFull(c, b[:1]) // read 1st byte for address type
 			if err != nil {
+				logPrintln(3, c.RemoteAddr(), err)
 				return
 			}
 
@@ -56,10 +57,12 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			case socks.AtypDomainName:
 				_, err = io.ReadFull(c, b[1:2]) // read 2nd byte for domain length
 				if err != nil {
+					logPrintln(3, err)
 					return
 				}
 				_, err = io.ReadFull(c, b[2:2+b[1]+2])
 				if err != nil {
+					logPrintln(3, err)
 					return
 				}
 				host = string(b[2 : 2+b[1]])
@@ -69,6 +72,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			case socks.AtypIPv4:
 				_, err = io.ReadFull(c, b[1:1+net.IPv4len+2])
 				if err != nil {
+					logPrintln(3, err)
 					return
 				}
 
@@ -77,9 +81,11 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 					var b [1024]byte
 					n, err := c.Read(b[:])
 					if err != nil {
+						logPrintln(3, err)
 						return
 					}
 					if n != int(binary.BigEndian.Uint16(b[:2])+2) {
+						logPrintln(3, err)
 						return
 					}
 					response := NSRequest(b[2:n], true)
@@ -105,6 +111,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			case socks.AtypIPv6:
 				_, err = io.ReadFull(c, b[1:1+net.IPv6len+2])
 				if err != nil {
+					logPrintln(3, err)
 					return
 				}
 
@@ -113,9 +120,11 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 					var b [1024]byte
 					n, err := c.Read(b[:])
 					if err != nil {
+						logPrintln(3, err)
 						return
 					}
 					if n != int(binary.BigEndian.Uint16(b[:2])+2) {
+						logPrintln(3, err)
 						return
 					}
 					response := NSRequest(b[2:n], true)
@@ -130,7 +139,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 
 				config, ok = DomainMap[host]
 			default:
-				logPrintln(1, "not supported")
+				logPrintln(2, "not supported")
 				return
 			}
 
@@ -238,6 +247,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			}
 
 			if rc == nil {
+				logPrintln(1, "failed to connect to target:", addr)
 				return
 			}
 
@@ -456,6 +466,12 @@ func ShadowsocksServer(addr string) {
 		log.Fatal(err)
 	}
 
+	host, port, err := net.SplitHostPort(addr)
+	ip := net.ParseIP(host)
+	if ip == nil {
+		addr = net.JoinHostPort("", port)
+	}
+
 	cipher = strings.ToUpper(cipher)
 
 	ciph, err := core.PickCipher(cipher, nil, password)
@@ -474,13 +490,31 @@ func ShadowsocksDial(conn net.Conn, host string, port int, cipher, password stri
 	}
 
 	conn = ciph.StreamConn(conn)
+	ip := net.ParseIP(host)
 
-	var tgt [256]byte
-	tgt[0] = socks.AtypDomainName
-	tgt[1] = byte(len(host))
-	copy(tgt[2:], []byte(host))
-	binary.BigEndian.PutUint16(tgt[tgt[1]+2:], uint16(port))
-	_, err = conn.Write(tgt[:tgt[1]+4])
+	if ip != nil {
+		ip4 := ip.To4()
+		if ip4 != nil {
+			var tgt [7]byte
+			tgt[0] = socks.AtypIPv4
+			copy(tgt[1:], ip4)
+			binary.BigEndian.PutUint16(tgt[5:], uint16(port))
+			_, err = conn.Write(tgt[:7])
+		} else {
+			var tgt [19]byte
+			tgt[0] = socks.AtypIPv6
+			copy(tgt[1:], ip)
+			binary.BigEndian.PutUint16(tgt[17:], uint16(port))
+			_, err = conn.Write(tgt[:19])
+		}
+	} else {
+		var tgt [MaxAddrLen]byte
+		tgt[0] = socks.AtypDomainName
+		tgt[1] = byte(len(host))
+		copy(tgt[2:], []byte(host))
+		binary.BigEndian.PutUint16(tgt[tgt[1]+2:], uint16(port))
+		_, err = conn.Write(tgt[:tgt[1]+4])
+	}
 
 	return conn, err
 }
