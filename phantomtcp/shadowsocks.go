@@ -252,7 +252,10 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			}
 
 			defer rc.Close()
-			rc.(*net.TCPConn).SetKeepAlive(true)
+			switch rc := rc.(type) {
+			case *net.TCPConn:
+				rc.SetKeepAlive(true)
+			}
 
 			_, _, err = relay(c, rc)
 			if err != nil {
