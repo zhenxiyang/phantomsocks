@@ -644,9 +644,10 @@ func StoreDNSCache(qname string, qtype uint16, answer DomainIP) {
 	}
 }
 
-func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
-	if qtype != 1 && qtype != 28 {
-		return 0, nil
+func NSLookup(name string, option uint32, server string) (int, []net.IP) {
+	var qtype uint16 = 1
+	if option&OPT_IPV6 != 0 {
+		qtype = 28
 	}
 
 	answer, ok := LoadDNSCache(name, qtype)
@@ -715,12 +716,16 @@ func NSLookup(name string, qtype uint16, server string) (int, []net.IP) {
 			ips[i] = net.ParseIP(options.PD + ip.String())
 		}
 	}
-	logPrintln(3, name, qtype, ips)
+	logPrintln(3, "nslookup", name, qtype, ips)
 
-	NoseLock.Lock()
-	index := len(Nose)
-	Nose = append(Nose, name)
-	NoseLock.Unlock()
+	index := 0
+	if option != 0 {
+		NoseLock.Lock()
+		index = len(Nose)
+		Nose = append(Nose, name)
+		NoseLock.Unlock()
+	}
+
 	StoreDNSCache(name, qtype, DomainIP{index, dns_ttl, ips})
 
 	return index, ips
@@ -789,11 +794,11 @@ func NSRequest(request []byte, cache bool) []byte {
 	var serverAddr []string
 	if ok {
 		method = conf.Option
-		logPrintln(2, name, conf.Server)
+		logPrintln(2, "request:", name, conf.Server)
 		serverAddr = strings.SplitN(conf.Server, "/", 4)
 	} else {
 		method = 0
-		logPrintln(2, name, DNS)
+		logPrintln(2, "request:", name, DNS)
 		serverAddr = strings.SplitN(DNS, "/", 4)
 	}
 
@@ -807,8 +812,8 @@ func NSRequest(request []byte, cache bool) []byte {
 		return BuildResponse(request, qtype, 0, nil)
 	}
 
-	if len(serverAddr) > 2 {
-		if method != 0 {
+	if method != 0 {
+		if len(serverAddr) > 2 {
 			if qtype == 28 {
 				return BuildResponse(request, qtype, 0, nil)
 			}
@@ -836,6 +841,16 @@ func NSRequest(request []byte, cache bool) []byte {
 				return BuildLie(request, qtype, index)
 			}
 		} else {
+			NoseLock.Lock()
+			index := len(Nose)
+			Nose = append(Nose, name)
+			NoseLock.Unlock()
+			StoreDNSCache(name, 1, DomainIP{index, 0, nil})
+			StoreDNSCache(name, 28, DomainIP{0, 0, nil})
+			return BuildLie(request, qtype, index)
+		}
+	} else {
+		if len(serverAddr) > 2 {
 			switch serverAddr[0] {
 			case "udp:":
 				response, err = UDPlookup(request, serverAddr[2])
@@ -846,9 +861,9 @@ func NSRequest(request []byte, cache bool) []byte {
 			default:
 				return nil
 			}
+		} else {
+			return nil
 		}
-	} else {
-		return nil
 	}
 
 	if err != nil {

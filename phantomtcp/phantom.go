@@ -427,7 +427,7 @@ func LoadConfig(filename string) error {
 				} else {
 					addr, err := net.ResolveTCPAddr("tcp", keys[0])
 					if err != nil {
-						if server == "" {
+						if server == "" && option == 0 {
 							ACache.Store(keys[0], DomainIP{0, 0, nil})
 							AAAACache.Store(keys[0], DomainIP{0, 0, nil})
 						} else {

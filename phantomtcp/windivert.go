@@ -465,12 +465,7 @@ func RedirectDNS() {
 
 		conf, ok := ConfigLookup(qname)
 		if ok {
-			index := 0
-			if conf.Option&OPT_IPV6 != 0 {
-				index, _ = NSLookup(qname, 28, conf.Server)
-			} else {
-				index, _ = NSLookup(qname, 1, conf.Server)
-			}
+			index, _ := NSLookup(qname, conf.Option, conf.Server)
 
 			var response []byte
 			if qtype == 28 {

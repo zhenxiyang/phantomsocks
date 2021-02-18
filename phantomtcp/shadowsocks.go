@@ -146,12 +146,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			var rc net.Conn
 			if ok {
 				if config.Option&OPT_PROXY == 0 {
-					var ips []net.IP
-					if config.Option&OPT_IPV6 != 0 {
-						_, ips = NSLookup(host, 28, config.Server)
-					} else {
-						_, ips = NSLookup(host, 1, config.Server)
-					}
+					_, ips := NSLookup(host, config.Option, config.Server)
 					if len(ips) == 0 {
 						logPrintln(1, host, "no such host")
 						return
