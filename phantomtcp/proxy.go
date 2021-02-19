@@ -483,6 +483,7 @@ func RedirectProxy(client net.Conn) {
 	{
 		var host string
 		var port int
+		var ips []net.IP = nil
 		addr, err := GetOriginalDST(client.(*net.TCPConn))
 		if err != nil {
 			logPrintln(1, err)
@@ -509,95 +510,103 @@ func RedirectProxy(client net.Conn) {
 				return
 			}
 			host = addr.IP.String()
+			ips = []net.IP{addr.IP}
 		}
 		port = addr.Port
 
 		config, ok := ConfigLookup(host)
 
-		if !ok {
-			return
-		}
-
-		if config.Option&OPT_PROXY == 0 {
-			_, ips := NSLookup(host, config.Option, config.Server)
-			if len(ips) == 0 {
-				logPrintln(1, host, "no such host")
-				return
-			}
-
-			if config.Option == 0 {
-				conn, err = Dial(ips, port, nil, nil)
-				if err != nil {
-					logPrintln(1, err)
-					return
-				}
-			} else {
-				var b [1500]byte
-				n, err := client.Read(b[:])
-				if err != nil {
-					logPrintln(1, err)
-					return
-				}
-
-				if b[0] == 0x16 {
-					offset, length := GetSNI(b[:n])
-					var conf *Config = nil
-					if length > 0 {
-						host = string(b[offset : offset+length])
-						config, ok = ConfigLookup(host)
-						conf = &config
+		if ok {
+			if config.Option&OPT_PROXY == 0 {
+				if ips == nil {
+					_, ips = NSLookup(host, config.Option, config.Server)
+					if len(ips) == 0 {
+						logPrintln(1, host, "no such host")
+						return
 					}
+				}
 
-					logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
-
-					conn, err = Dial(ips, port, b[:n], conf)
+				if config.Option == 0 {
+					conn, err = Dial(ips, port, nil, &config)
 					if err != nil {
-						logPrintln(1, host, err)
+						logPrintln(1, err)
 						return
 					}
 				} else {
-					logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
-					if config.Option&OPT_HTTPS != 0 {
-						HttpMove(client, "https", b[:n])
-						return
-					} else if config.Option&OPT_MOVE != 0 {
-						HttpMove(client, config.Server, b[:n])
-						return
-					} else if config.Option&OPT_STRIP != 0 {
-						ip := ips[rand.Intn(len(ips))]
-						conn, err = DialStrip(ip.String(), "")
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-						_, err = conn.Write(b[:n])
-					} else {
-						conn, err = HTTP(client, ips, port, b[:n], &config)
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-						io.Copy(client, conn)
+					var b [1500]byte
+					n, err := client.Read(b[:])
+					if err != nil {
+						logPrintln(1, err)
 						return
 					}
-				}
-			}
-		} else {
-			logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, config)
 
-			if config.Option == OPT_PROXY {
-				conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, nil)
+					if b[0] == 0x16 {
+						offset, length := GetSNI(b[:n])
+						var conf *Config = nil
+						if length > 0 {
+							host = string(b[offset : offset+length])
+							config, ok = ConfigLookup(host)
+							conf = &config
+						}
+
+						logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
+
+						conn, err = Dial(ips, port, b[:n], conf)
+						if err != nil {
+							logPrintln(1, host, err)
+							return
+						}
+					} else {
+						logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
+						if config.Option&OPT_HTTPS != 0 {
+							HttpMove(client, "https", b[:n])
+							return
+						} else if config.Option&OPT_MOVE != 0 {
+							HttpMove(client, config.Server, b[:n])
+							return
+						} else if config.Option&OPT_STRIP != 0 {
+							ip := ips[rand.Intn(len(ips))]
+							conn, err = DialStrip(ip.String(), "")
+							if err != nil {
+								logPrintln(1, err)
+								return
+							}
+							_, err = conn.Write(b[:n])
+						} else {
+							conn, err = HTTP(client, ips, port, b[:n], &config)
+							if err != nil {
+								logPrintln(1, err)
+								return
+							}
+							io.Copy(client, conn)
+							return
+						}
+					}
+				}
 			} else {
-				var b [1500]byte
-				n, err := client.Read(b[:])
+				logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, config)
+
+				if config.Option == OPT_PROXY {
+					conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, nil)
+				} else {
+					var b [1500]byte
+					n, err := client.Read(b[:])
+					if err != nil {
+						logPrintln(1, err)
+						return
+					}
+
+					conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, b[:n], &config)
+				}
+
 				if err != nil {
-					logPrintln(1, err)
+					logPrintln(1, host, err)
 					return
 				}
-
-				conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, b[:n], &config)
 			}
-
+		} else if ips != nil {
+			logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", addr)
+			conn, err = net.DialTCP("tcp", nil, addr)
 			if err != nil {
 				logPrintln(1, host, err)
 				return

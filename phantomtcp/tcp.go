@@ -159,8 +159,14 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 
 	if method == 0 {
 		ip := addresses[rand.Intn(len(addresses))]
+
+		laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
+		if err != nil {
+			return nil, err
+		}
+
 		raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-		conn, err = net.DialTCP("tcp", nil, raddr)
+		conn, err = net.DialTCP("tcp", laddr, raddr)
 		if err != nil {
 			return nil, err
 		}
