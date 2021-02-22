@@ -6,6 +6,7 @@ package phantomtcp
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -28,9 +29,17 @@ func connectionMonitor(device string, ipv6 bool) {
 
 	var handle *net.IPConn
 	if ipv6 {
+		if localaddr == nil {
+			logPrintln(1, "no IPv6 on", device)
+			return
+		}
 		netaddr, _ := net.ResolveIPAddr("ip6", localaddr.IP.String())
 		handle, err = net.ListenIP("ip6:tcp", netaddr)
 	} else {
+		if localaddr == nil {
+			logPrintln(1, "no IPv4 on", device)
+			return
+		}
 		netaddr, _ := net.ResolveIPAddr("ip4", localaddr.IP.String())
 		handle, err = net.ListenIP("ip4:tcp", netaddr)
 	}
@@ -57,7 +66,7 @@ func connectionMonitor(device string, ipv6 bool) {
 			continue
 		}
 		srcPort := tcp.DstPort
-		synAddr := addr.String()
+		synAddr := net.JoinHostPort(addr.String(), strconv.Itoa(int(tcp.SrcPort)))
 		_, ok := ConnSyn.Load(synAddr)
 		if ok {
 			if ipv6 {
