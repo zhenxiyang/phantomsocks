@@ -43,8 +43,6 @@ func connectionMonitor(layer uint8) {
 			continue
 		}
 
-		winDivert.Send(divertpacket)
-
 		ipv6 := divertpacket.Raw[0]>>4 == 6
 		var packet gopacket.Packet
 		if ipv6 {
@@ -65,6 +63,7 @@ func connectionMonitor(layer uint8) {
 			if synack {
 				method = ConnWait4[tcp.DstPort]
 				if method == 0 {
+					winDivert.Send(divertpacket)
 					continue
 				}
 				srcPort = tcp.DstPort
@@ -86,7 +85,7 @@ func connectionMonitor(layer uint8) {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
 					ip.SrcIP = srcIP
-					ip.TTL = 64
+					ip.TTL = 128
 
 					tcp.DstPort = tcp.SrcPort
 					tcp.SrcPort = srcPort
@@ -109,15 +108,16 @@ func connectionMonitor(layer uint8) {
 						}
 						ConnWait4[srcPort] = 0
 					} else if method&(OPT_TFO|OPT_HTFO) != 0 {
-						if ip.TTL < 64 {
+						if ip.TTL < 128 {
 							count := 1
 							if method&OPT_SYNX2 != 0 {
 								count = 2
 							}
 
-							ip.TTL = 64
+							tfo_id := ip.TTL & 63
+							ip.TTL = 128
 							if tcp.SYN == true {
-								payload := TFOPayload[ip.TOS>>2]
+								payload := TFOPayload[tfo_id]
 								if payload != nil {
 									ip.TOS = 0
 									ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, count)
@@ -132,8 +132,11 @@ func connectionMonitor(layer uint8) {
 							}
 						}
 					} else if method&OPT_SYNX2 != 0 {
+						winDivert.Send(divertpacket)
 						SendPacket(packet)
 					}
+				} else {
+					winDivert.Send(divertpacket)
 				}
 
 				go func(info *ConnectionInfo) {
@@ -142,6 +145,8 @@ func connectionMonitor(layer uint8) {
 					case <-time.After(time.Second * 2):
 					}
 				}(connInfo)
+			} else {
+				winDivert.Send(divertpacket)
 			}
 		case *layers.IPv6:
 			var srcPort layers.TCPPort
@@ -150,6 +155,7 @@ func connectionMonitor(layer uint8) {
 			if synack {
 				method = ConnWait6[tcp.DstPort]
 				if method == 0 {
+					winDivert.Send(divertpacket)
 					continue
 				}
 				srcPort = tcp.DstPort
@@ -193,15 +199,16 @@ func connectionMonitor(layer uint8) {
 						}
 						ConnWait6[srcPort] = 0
 					} else if method&(OPT_TFO|OPT_HTFO) != 0 {
-						if ip.HopLimit < 64 {
+						if ip.HopLimit < 128 {
 							count := 1
 							if method&OPT_SYNX2 != 0 {
 								count = 2
 							}
 
-							ip.HopLimit = 64
+							tfo_id := ip.HopLimit & 63
+							ip.HopLimit = 128
 							if tcp.SYN == true {
-								payload := TFOPayload[ip.TrafficClass>>2]
+								payload := TFOPayload[tfo_id]
 								if payload != nil {
 									ip.TrafficClass = 0
 									ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, count)
@@ -216,8 +223,11 @@ func connectionMonitor(layer uint8) {
 							}
 						}
 					} else if method&OPT_SYNX2 != 0 {
+						winDivert.Send(divertpacket)
 						SendPacket(packet)
 					}
+				} else {
+					winDivert.Send(divertpacket)
 				}
 
 				go func(info *ConnectionInfo) {
@@ -226,7 +236,11 @@ func connectionMonitor(layer uint8) {
 					case <-time.After(time.Second * 2):
 					}
 				}(connInfo)
+			} else {
+				winDivert.Send(divertpacket)
 			}
+		default:
+			winDivert.Send(divertpacket)
 		}
 	}
 }

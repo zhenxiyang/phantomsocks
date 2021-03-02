@@ -53,7 +53,8 @@ const (
 	OPT_IPV4  = 0x1 << 20
 	OPT_IPV6  = 0x1 << 21
 	OPT_MODE2 = 0x1 << 22
-	OPT_PROXY = 0x1 << 23
+	OPT_MODE3 = 0x1 << 23
+	OPT_PROXY = 0x1 << 24
 )
 
 const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME
@@ -83,6 +84,7 @@ var MethodMap = map[string]uint32{
 	"ipv4":  OPT_IPV4,
 	"ipv6":  OPT_IPV6,
 	"mode2": OPT_MODE2,
+	"mode3": OPT_MODE3,
 	"proxy": OPT_PROXY,
 }
 
@@ -384,13 +386,14 @@ func LoadConfig(filename string) error {
 							if ok {
 								RecordA = result.(DomainIP)
 							} else {
-								log.Println(string(line), "bad domain")
+								result, ok = AAAACache.Load(keys[1][1 : len(keys[1])-1])
+								if ok {
+									RecordAAAA = result.(DomainIP)
+								}
 							}
-							result, ok = ACache.Load(keys[1][1 : len(keys[1])-1])
-							if ok {
-								RecordAAAA = result.(DomainIP)
-							} else {
-								log.Println(string(line), "bad domain")
+							if !ok {
+								DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+								return nil
 							}
 						} else {
 							index := 0

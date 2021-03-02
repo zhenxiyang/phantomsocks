@@ -271,6 +271,11 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				fakepayload = fakepayload[cut:]
 				count = 2
 			} else {
+				if conf.Option&OPT_MODE3 != 0 {
+					for i := 0; i < length; i++ {
+						fakepayload[i] = byte(rand.Intn(256))
+					}
+				}
 				err = ModifyAndSendPacket(synpacket, fakepayload, conf.Option, conf.TTL, count)
 				if err != nil {
 					conn.Close()

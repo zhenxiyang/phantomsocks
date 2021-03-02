@@ -33,8 +33,7 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 					if (conf.Option & OPT_MSS) != 0 {
 					}
 					if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
-						syscall.SetsockoptInt(f, syscall.IPPROTO_IP, syscall.IP_TOS, tfo_id<<2)
-						syscall.SetsockoptInt(f, syscall.IPPROTO_IP, syscall.IP_TTL, int(conf.TTL))
+						syscall.SetsockoptInt(f, syscall.IPPROTO_IP, syscall.IP_TTL, tfo_id|64)
 					}
 					if (conf.Option & OPT_KEEPALIVE) != 0 {
 						syscall.SetsockoptInt(f, syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1)
