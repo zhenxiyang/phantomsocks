@@ -152,31 +152,18 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 	var err error
 	var conn net.Conn
 
-	var method uint32 = 0
-	if conf != nil && b != nil {
-		method = conf.Option | OPT_MODIFY
-	}
+	device := ""
+	offset := 0
+	length := 0
 
-	if method == 0 {
-		ip := addresses[rand.Intn(len(addresses))]
-
-		laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
-		if err != nil {
-			return nil, err
-		}
-
-		raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-		conn, err = net.DialTCP("tcp", laddr, raddr)
-		if err != nil {
-			return nil, err
-		}
+	if conf != nil {
+		device = conf.Device
 		if b != nil {
-			_, err = conn.Write(b)
+			if conf.Option|OPT_MODIFY != 0 {
+				offset, length = GetSNI(b)
+			}
 		}
-		return conn, err
 	}
-
-	offset, length := GetSNI(b)
 
 	if length > 0 {
 		rand.Seed(time.Now().UnixNano())
@@ -220,7 +207,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		for i := 0; i < 5; i++ {
 			ip := addresses[rand.Intn(len(addresses))]
 
-			laddr, err := GetLocalAddr(conf.Device, ip.To4() == nil)
+			laddr, err := GetLocalAddr(device, ip.To4() == nil)
 			if err != nil {
 				return nil, errors.New("invalid device")
 			}
@@ -312,7 +299,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 
 		var laddr *net.TCPAddr = nil
 		if conf.Device != "" {
-			laddr, err = GetLocalAddr(conf.Device, ip.To4() == nil)
+			laddr, err = GetLocalAddr(device, ip.To4() == nil)
 			if err != nil {
 				return nil, err
 			}
@@ -323,10 +310,14 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		if err != nil {
 			return nil, err
 		}
-		_, err = conn.Write(b)
-		if err != nil {
-			conn.Close()
+
+		if b != nil {
+			_, err = conn.Write(b)
+			if err != nil {
+				conn.Close()
+			}
 		}
+
 		return conn, err
 	}
 }
@@ -681,7 +672,7 @@ func DialProxy(address string, proxy string, header []byte, conf *Config) (net.C
 		password, _ := u.User.Password()
 
 		if u.Path != "" {
-			extHeader, err := base64.StdEncoding.DecodeString(u.Path)
+			extHeader, err := base64.StdEncoding.DecodeString(u.Path[1:])
 			if err != nil {
 				conn.Close()
 				return nil, err

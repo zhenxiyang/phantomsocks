@@ -88,7 +88,7 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 			return nil, nil, err
 		}
 		if conf.MAXTTL != 0 {
-			err = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, int(conf.MAXTTL))
+			err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, int(conf.MAXTTL))
 		} else {
 			err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, 64)
 		}
