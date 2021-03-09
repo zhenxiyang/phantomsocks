@@ -78,7 +78,7 @@ Windows(windivert):
 ## Installation
 ### pcap version
 ```
-go build phantomsocks.go
+go build
 ```
 static linking 
 ```
