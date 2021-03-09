@@ -82,17 +82,17 @@ go build phantomsocks.go
 ```
 static linking 
 ```
-go build -ldflags '-extldflags "-static"' phantomsocks.go
+go build -ldflags '-extldflags "-static"'
 ```
 ### raw socket version
 raw socket is used by default on Linux/mipsle, you can edit pcap.go & raw.go to use this version on all Linux
 ```
-env GOOS=linux GOARCH=mipsle go build phantomsocks.go
+env GOOS=linux GOARCH=mipsle go build
 ```
 ### windivert version
 raw socket is Windows only and used by default on Windows, you can edit windivert.go & pcap.go & pcap_windows.go to use pcap on Windows
 ```
-env GOOS=windows GOARCH=amd64 go build phantomsocks.go
+env GOOS=windows GOARCH=amd64 go build
 ```
 
 ### cross & static compile on Ubuntu 18.04
@@ -124,5 +124,5 @@ make && make install
 Build phantomsocks
 ```
 cd ~/go/src/github.com/Macronut/phantomsocks
-env GOOS=linux GOARCH=mipsle CGO_ENABLED=1 CC='~/Downloads/openwrt-sdk-19.07.2-ramips-mt7621_gcc-7.5.0_musl.Linux-x86_64/staging_dir/toolchain-mipsel_24kc_gcc-7.5.0_musl/bin/mipsel-openwrt-linux-gcc'  go build  -ldflags '-extldflags "-static"'  phantomsocks.go
+env GOOS=linux GOARCH=mipsle CGO_ENABLED=1 CC='~/Downloads/openwrt-sdk-19.07.2-ramips-mt7621_gcc-7.5.0_musl.Linux-x86_64/staging_dir/toolchain-mipsel_24kc_gcc-7.5.0_musl/bin/mipsel-openwrt-linux-gcc'  go build  -ldflags '-extldflags "-static"'
 ```
