@@ -76,12 +76,17 @@ Windows(windivert):
   https             #the domain below will be move to https when using http on port 80
 ```
 ## Installation
-### pcap version
-```
+go get github.com/Macronut/phantomsocks
+
+## Compile
+cd $GOPATH/src/github.com/Macronut/phantomsocks/
+
 go build
+
+### pcap version
+static linking for pcap
 ```
-static linking 
-```
+sudo apt-get install -y libpcap-dev
 go build -ldflags '-extldflags "-static"'
 ```
 ### raw socket version
