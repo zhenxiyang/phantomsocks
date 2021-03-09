@@ -41,7 +41,7 @@ macOS:
 ```
 Linux(pcap&rawsocket):
 iptables -t nat -A OUTPUT -d 6.0.0.0/8 -p tcp -j REDIRECT --to-port 6
-./phantomsocks -device eth0 -redir 0.0.0.0:6
+./phantomsocks -device eth0 -dns :53 -redir :6
 
 Windows(windivert):
 ./phantomsocks -redir 0.0.0.0:6 -proxy redirect://0.0.0.0:6
