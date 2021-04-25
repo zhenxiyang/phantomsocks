@@ -53,7 +53,7 @@ const (
 	OPT_IPV4  = 0x1 << 20
 	OPT_IPV6  = 0x1 << 21
 	OPT_MODE2 = 0x1 << 22
-	OPT_MODE3 = 0x1 << 23
+	OPT_DF    = 0x1 << 23
 	OPT_PROXY = 0x1 << 24
 )
 
@@ -84,7 +84,7 @@ var MethodMap = map[string]uint32{
 	"ipv4":  OPT_IPV4,
 	"ipv6":  OPT_IPV6,
 	"mode2": OPT_MODE2,
-	"mode3": OPT_MODE3,
+	"df":    OPT_DF,
 	"proxy": OPT_PROXY,
 }
 

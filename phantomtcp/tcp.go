@@ -258,7 +258,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				fakepayload = fakepayload[cut:]
 				count = 2
 			} else {
-				if conf.Option&OPT_MODE3 != 0 {
+				if conf.Option&OPT_DF != 0 {
 					for i := 0; i < length; i++ {
 						fakepayload[i] = byte(rand.Intn(256))
 					}
@@ -298,7 +298,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		ip := addresses[rand.Intn(len(addresses))]
 
 		var laddr *net.TCPAddr = nil
-		if conf.Device != "" {
+		if device != "" {
 			laddr, err = GetLocalAddr(device, ip.To4() == nil)
 			if err != nil {
 				return nil, err
