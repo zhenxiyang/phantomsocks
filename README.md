@@ -76,10 +76,10 @@ Windows(windivert):
   https             #the domain below will be move to https when using http on port 80
 ```
 ## Installation
-go get github.com/Macronut/phantomsocks
+go get github.com/macronut/phantomsocks
 
 ## Compile
-cd $GOPATH/src/github.com/Macronut/phantomsocks/
+cd $GOPATH/src/github.com/macronut/phantomsocks/
 
 go build
 
