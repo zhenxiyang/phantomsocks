@@ -256,9 +256,10 @@ func HTTPProxy(client net.Conn) {
 			return
 		}
 
+		request := b[:n]
 		var method, host string
 		var port int
-		fmt.Sscanf(string(b[:bytes.IndexByte(b[:], '\n')]), "%s%s", &method, &host)
+		fmt.Sscanf(string(request[:bytes.IndexByte(request, '\n')]), "%s%s", &method, &host)
 
 		if method == "CONNECT" {
 			fmt.Fprint(client, "HTTP/1.1 200 Connection established\r\n\r\n")
@@ -274,6 +275,7 @@ func HTTPProxy(client net.Conn) {
 				if index != -1 {
 					host = host[:index]
 				}
+				request = bytes.Replace(b[:n], []byte("http://"+host), nil, 1)
 			} else {
 				return
 			}
@@ -297,17 +299,17 @@ func HTTPProxy(client net.Conn) {
 				}
 
 				if b[0] == 0x16 {
-					conn, err = Dial(ips, port, b[:n], &conf)
+					conn, err = Dial(ips, port, request, &conf)
 					if err != nil {
 						logPrintln(1, host, err)
 						return
 					}
 				} else {
 					if conf.Option&OPT_HTTPS != 0 {
-						HttpMove(client, "https", b[:n])
+						HttpMove(client, "https", request)
 						return
 					} else if conf.Option&OPT_MOVE != 0 {
-						HttpMove(client, conf.Server, b[:n])
+						HttpMove(client, conf.Server, request)
 						return
 					} else if conf.Option&OPT_STRIP != 0 {
 						ip := ips[rand.Intn(len(ips))]
@@ -316,9 +318,9 @@ func HTTPProxy(client net.Conn) {
 							logPrintln(1, err)
 							return
 						}
-						_, err = conn.Write(b[:n])
+						_, err = conn.Write(request)
 					} else {
-						conn, err = HTTP(client, ips, port, b[:n], &conf)
+						conn, err = HTTP(client, ips, port, request, &conf)
 						if err != nil {
 							logPrintln(1, err)
 							return
