@@ -20,6 +20,7 @@ var DNS string = ""
 var DNSMinTTL uint32 = 0
 var ACache sync.Map
 var AAAACache sync.Map
+var HTTPSCache sync.Map
 var Nose []string = []string{"phantom.socks"}
 var NoseLock sync.Mutex
 
@@ -472,7 +473,8 @@ func BuildLie(request []byte, qtype int, id int) []byte {
 	length := len(request)
 	response[2] = 0x81
 	response[3] = 0x80
-	if qtype == 1 {
+	switch qtype {
+	case 1:
 		answer := []byte{0xC0, 0x0C, 0x00, 1,
 			0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x04,
 			6, 0}
@@ -481,7 +483,7 @@ func BuildLie(request []byte, qtype int, id int) []byte {
 		binary.BigEndian.PutUint16(response[length:], uint16(id))
 		length += 2
 		binary.BigEndian.PutUint16(response[6:], 1)
-	} else if qtype == 28 {
+	case 28:
 		answer := []byte{0xC0, 0x0C, 0x00, 28,
 			0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10,
 			0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -491,7 +493,19 @@ func BuildLie(request []byte, qtype int, id int) []byte {
 		binary.BigEndian.PutUint32(response[length:], uint32(id))
 		length += 4
 		binary.BigEndian.PutUint16(response[6:], 1)
+	case 65:
+		answer := []byte{0xC0, 0x0C, 0x00, 65,
+			0, 1, 0, 0, 0, 16, 0, 18,
+			0, 1, 0,
+			0, 1, 0, 3, 2, 0x68, 0x32,
+			0, 4, 0, 4, 6, 0}
+		copy(response[length:], answer)
+		length += 28
+		binary.BigEndian.PutUint16(response[length:], uint16(id))
+		length += 2
+		binary.BigEndian.PutUint16(response[6:], 1)
 	}
+
 	return response[:length]
 }
 
@@ -624,6 +638,8 @@ func LoadDNSCache(qname string, qtype uint16) (DomainIP, bool) {
 		result, ok = ACache.Load(qname)
 	case 28:
 		result, ok = AAAACache.Load(qname)
+	case 65:
+		result, ok = HTTPSCache.Load(qname)
 	default:
 		return answer, false
 	}
@@ -738,7 +754,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		return nil
 	}
 
-	if qtype != 1 && qtype != 28 {
+	if qtype != 1 && qtype != 28 && qtype != 65 {
 		return BuildResponse(request, qtype, 3600, nil)
 	}
 
@@ -753,10 +769,10 @@ func NSRequest(request []byte, cache bool) []byte {
 				}
 			}
 			if answer.Index > 0 {
-				if qtype == 1 {
-					return BuildLie(request, qtype, answer.Index)
+				if qtype == 28 {
+					return BuildResponse(request, qtype, 0, nil)
 				}
-				return BuildResponse(request, qtype, 0, nil)
+				return BuildLie(request, qtype, answer.Index)
 			} else {
 				return BuildResponse(request, qtype, uint32(ttl), answer.Addresses)
 			}
@@ -773,16 +789,20 @@ func NSRequest(request []byte, cache bool) []byte {
 			if ok {
 				logPrintln(3, "cached:", name, qtype, answer.Addresses)
 				if answer.Index > 0 {
-					if qtype == 1 {
-						return BuildLie(request, qtype, answer.Index)
+					if qtype == 28 {
+						return BuildResponse(request, qtype, 0, nil)
 					}
-					return BuildResponse(request, qtype, 0, nil)
+					return BuildLie(request, qtype, answer.Index)
 				} else {
 					return BuildResponse(request, qtype, 3600, answer.Addresses)
 				}
 			}
 			offset++
 		}
+	}
+
+	if qtype == 65 {
+		return BuildResponse(request, qtype, 3600, nil)
 	}
 
 	var response []byte

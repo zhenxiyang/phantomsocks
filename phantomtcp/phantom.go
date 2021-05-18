@@ -421,6 +421,15 @@ func LoadConfig(filename string) error {
 							DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
 							ACache.Store(keys[0], RecordA)
 							AAAACache.Store(keys[0], RecordAAAA)
+							if option&OPT_HTTPS != 0 {
+								if option&OPT_IPV6 == 0 {
+									HTTPSCache.Store(keys[0], RecordA)
+								} else {
+									HTTPSCache.Store(keys[0], RecordAAAA)
+								}
+							} else {
+								HTTPSCache.Store(keys[0], DomainIP{0, 0, nil})
+							}
 						} else {
 							DomainMap[ip.String()] = Config{option, minTTL, maxTTL, syncMSS, server, device}
 							ACache.Store(ip.String(), RecordA)
