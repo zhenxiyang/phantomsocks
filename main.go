@@ -125,7 +125,6 @@ func main() {
 		ConfigFiles     string `json:"config,omitempty"`
 		HostsFile       string `json:"hosts,omitempty"`
 		SocksListenAddr string `json:"socks,omitempty"`
-		HttpListenAddr  string `json:"http,omitempty"`
 		PacListenAddr   string `json:"pac,omitempty"`
 		SniListenAddr   string `json:"sni,omitempty"`
 		RedirectAddr    string `json:"redir,omitempty"`
@@ -142,7 +141,6 @@ func main() {
 		flag.StringVar(&flags.ConfigFiles, "c", "default.conf", "Config")
 		flag.StringVar(&flags.HostsFile, "hosts", "", "Hosts")
 		flag.StringVar(&flags.SocksListenAddr, "socks", "", "Socks5")
-		flag.StringVar(&flags.HttpListenAddr, "http", "", "HTTP")
 		flag.StringVar(&flags.PacListenAddr, "pac", "", "PACServer")
 		flag.StringVar(&flags.SniListenAddr, "sni", "", "SNIProxy")
 		flag.StringVar(&flags.SSListenAddr, "ss", "", "Shadowsocks")
@@ -222,11 +220,6 @@ func main() {
 		if flags.PacListenAddr != "" {
 			go PACServer(flags.PacListenAddr, flags.SocksListenAddr)
 		}
-	}
-
-	if flags.HttpListenAddr != "" {
-		fmt.Println("HTTP:", flags.HttpListenAddr)
-		go ListenAndServe(flags.HttpListenAddr, ptcp.HTTPProxy)
 	}
 
 	if flags.SniListenAddr != "" {

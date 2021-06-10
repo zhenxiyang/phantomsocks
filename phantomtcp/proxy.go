@@ -1,9 +1,7 @@
 package phantomtcp
 
 import (
-	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"log"
 	"math/rand"
@@ -13,10 +11,13 @@ import (
 	"time"
 )
 
+func ReadAtLeast() {
+
+}
+
 func SocksProxy(client net.Conn) {
 	defer client.Close()
 
-	host := ""
 	var conf Config
 	var ok bool
 
@@ -29,22 +30,165 @@ func SocksProxy(client net.Conn) {
 			return
 		}
 
+		host := ""
+		var ip net.IP
+		port := 0
+		var reply []byte
 		if b[0] == 0x05 {
 			client.Write([]byte{0x05, 0x00})
 			n, err = client.Read(b[:4])
 			if n != 4 {
 				return
 			}
-
 			switch b[3] {
 			case 0x01: //IPv4
+				n, err = client.Read(b[:6])
+				if n < 6 {
+					return
+				}
+				ip = net.IP(b[:4])
+				port = int(binary.BigEndian.Uint16(b[4:6]))
+			case 0x03: //Domain
 				n, err = client.Read(b[:])
-				port := int(binary.BigEndian.Uint16(b[4:6]))
-				addr := net.TCPAddr{IP: b[:4], Port: port, Zone: ""}
-				conf, ok := ConfigLookup(addr.IP.String())
+				addrLen := b[0]
+				host = string(b[1 : addrLen+1])
+				port = int(binary.BigEndian.Uint16(b[n-2:]))
+			case 0x04: //IPv6
+				n, err = client.Read(b[:])
+				ip = net.IP(b[:16])
+				port = int(binary.BigEndian.Uint16(b[16:18]))
+			default:
+				logPrintln(1, "not supported")
+				return
+			}
+			reply = []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+		} else if b[0] == 0x04 {
+			n, err = client.Read(b[:9])
+		} else {
+			return
+		}
+
+		if err != nil {
+			logPrintln(1, err)
+			return
+		}
+
+		if host != "" {
+			conf, ok = ConfigLookup(host)
+			if ok {
+				if conf.Option&OPT_PROXY == 0 {
+					logPrintln(1, "Socks:", host, port, conf)
+
+					_, ips := NSLookup(host, conf.Option, conf.Server)
+					if len(ips) == 0 {
+						logPrintln(1, host, "no such host")
+						return
+					}
+
+					if conf.Option == 0 {
+						conn, err = Dial(ips, port, nil, nil)
+						if err != nil {
+							logPrintln(1, err)
+							return
+						}
+
+						n, err = client.Write(reply)
+						if err != nil {
+							conn.Close()
+							logPrintln(1, err)
+							return
+						}
+					} else {
+						n, err = client.Write(reply)
+						if err != nil {
+							logPrintln(1, err)
+							return
+						}
+
+						n, err = client.Read(b[:])
+						if err != nil {
+							logPrintln(1, err)
+							return
+						}
+
+						if b[0] != 0x16 {
+							if conf.Option&OPT_HTTPS != 0 {
+								HttpMove(client, "https", b[:n])
+								return
+							} else if conf.Option&OPT_MOVE != 0 {
+								HttpMove(client, conf.Server, b[:n])
+								return
+							} else if conf.Option&OPT_STRIP != 0 {
+								rand.Seed(time.Now().UnixNano())
+								ipaddr := ips[rand.Intn(len(ips))]
+								conn, err = DialStrip(ipaddr.String(), "")
+								if err != nil {
+									logPrintln(1, err)
+									return
+								}
+								_, err = conn.Write(b[:n])
+							} else {
+								conn, err = HTTP(client, ips, 80, b[:n], &conf)
+								if err != nil {
+									logPrintln(1, err)
+									return
+								}
+								io.Copy(client, conn)
+								return
+							}
+						} else {
+							conn, err = Dial(ips, port, b[:n], &conf)
+							if err != nil {
+								logPrintln(1, host, err)
+								return
+							}
+						}
+					}
+				} else {
+					logPrintln(1, "SocksoverProxy:", client.RemoteAddr(), "->", host, port, conf)
+
+					if conf.Option&OPT_MODIFY != 0 {
+						n, err = client.Write(reply)
+						if err != nil {
+							conn.Close()
+							logPrintln(1, err)
+							return
+						}
+
+						n, err = client.Read(b[:])
+						if err != nil {
+							logPrintln(1, err)
+							return
+						}
+
+						conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), conf.Server, b[:n], &conf)
+					} else {
+						conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), conf.Server, nil, nil)
+						if err != nil {
+							logPrintln(1, host, err)
+							return
+						}
+
+						n, err = client.Write(reply)
+					}
+				}
+			} else {
+				addr := net.JoinHostPort(host, strconv.Itoa(port))
+				logPrintln(1, "Socks:", addr)
+				conn, err = net.Dial("tcp", addr)
+				if err != nil {
+					logPrintln(1, err)
+					return
+				}
+				_, err = client.Write(reply)
+			}
+		} else {
+			if ip.To4() != nil {
+				conf, ok := ConfigLookup(ip.String())
+				addr := net.TCPAddr{IP: ip, Port: port, Zone: ""}
 				if ok {
 					logPrintln(1, "Socks:", addr.IP.String(), addr.Port, conf)
-					client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+					client.Write(reply)
 					n, err = client.Read(b[:])
 
 					ip := addr.IP
@@ -61,134 +205,14 @@ func SocksProxy(client net.Conn) {
 					logPrintln(1, "Socks:", addr.IP.String(), addr.Port)
 
 					conn, err = net.DialTCP("tcp", nil, &addr)
-					client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+					client.Write(reply)
 				}
-			case 0x03: //Domain
-				n, err = client.Read(b[:])
-				port := int(binary.BigEndian.Uint16(b[n-2:]))
-				addrLen := b[0]
-				host = string(b[1 : addrLen+1])
-				conf, ok = ConfigLookup(host)
-				if ok {
-					if conf.Option&OPT_PROXY == 0 {
-						logPrintln(1, "Socks:", host, port, conf)
-
-						_, ips := NSLookup(host, conf.Option, conf.Server)
-						if len(ips) == 0 {
-							logPrintln(1, host, "no such host")
-							return
-						}
-
-						if conf.Option == 0 {
-							conn, err = Dial(ips, port, nil, nil)
-							if err != nil {
-								logPrintln(1, err)
-								return
-							}
-
-							n, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-							if err != nil {
-								conn.Close()
-								logPrintln(1, err)
-								return
-							}
-						} else {
-							n, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-							if err != nil {
-								logPrintln(1, err)
-								return
-							}
-
-							n, err = client.Read(b[:])
-							if err != nil {
-								logPrintln(1, err)
-								return
-							}
-
-							if b[0] != 0x16 {
-								if conf.Option&OPT_HTTPS != 0 {
-									HttpMove(client, "https", b[:n])
-									return
-								} else if conf.Option&OPT_MOVE != 0 {
-									HttpMove(client, conf.Server, b[:n])
-									return
-								} else if conf.Option&OPT_STRIP != 0 {
-									rand.Seed(time.Now().UnixNano())
-									ipaddr := ips[rand.Intn(len(ips))]
-									conn, err = DialStrip(ipaddr.String(), "")
-									if err != nil {
-										logPrintln(1, err)
-										return
-									}
-									_, err = conn.Write(b[:n])
-								} else {
-									conn, err = HTTP(client, ips, 80, b[:n], &conf)
-									if err != nil {
-										logPrintln(1, err)
-										return
-									}
-									io.Copy(client, conn)
-									return
-								}
-							} else {
-								conn, err = Dial(ips, port, b[:n], &conf)
-								if err != nil {
-									logPrintln(1, host, err)
-									return
-								}
-							}
-						}
-					} else {
-						logPrintln(1, "SocksoverProxy:", client.RemoteAddr(), "->", host, port, conf)
-
-						if conf.Option&OPT_MODIFY != 0 {
-							n, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-							if err != nil {
-								conn.Close()
-								logPrintln(1, err)
-								return
-							}
-
-							n, err = client.Read(b[:])
-							if err != nil {
-								logPrintln(1, err)
-								return
-							}
-
-							conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), conf.Server, b[:n], &conf)
-						} else {
-							conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), conf.Server, nil, nil)
-							if err != nil {
-								logPrintln(1, host, err)
-								return
-							}
-
-							n, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-						}
-					}
-				} else {
-					addr := net.JoinHostPort(host, strconv.Itoa(port))
-					logPrintln(1, "Socks:", addr)
-					conn, err = net.Dial("tcp", addr)
-					if err != nil {
-						logPrintln(1, err)
-						return
-					}
-					_, err = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-				}
-			case 0x04: //IPv6
-				n, err = client.Read(b[:])
-				port := int(binary.BigEndian.Uint16(b[16:18]))
-				addr := net.TCPAddr{IP: b[:16], Port: port, Zone: ""}
+			} else {
+				addr := net.TCPAddr{IP: ip, Port: port, Zone: ""}
 				logPrintln(1, "Socks:", addr.IP.String(), addr.Port)
 				conn, err = net.DialTCP("tcp", nil, &addr)
-				client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-			default:
-				logPrintln(1, "not supported")
-				return
+				client.Write(reply)
 			}
-		} else {
-			return
 		}
 
 		if err != nil {
@@ -242,128 +266,6 @@ func splitHostPort(hostport string) (host string, port int) {
 	}
 
 	return
-}
-
-func HTTPProxy(client net.Conn) {
-	defer client.Close()
-
-	var conn net.Conn
-	{
-		var b [1500]byte
-		n, err := client.Read(b[:])
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		request := b[:n]
-		var method, host string
-		var port int
-		fmt.Sscanf(string(request[:bytes.IndexByte(request, '\n')]), "%s%s", &method, &host)
-
-		if method == "CONNECT" {
-			fmt.Fprint(client, "HTTP/1.1 200 Connection established\r\n\r\n")
-			n, err = client.Read(b[:])
-			if err != nil {
-				logPrintln(1, err)
-				return
-			}
-		} else {
-			if strings.HasPrefix(host, "http://") {
-				host = host[7:]
-				index := strings.IndexByte(host, '/')
-				if index != -1 {
-					host = host[:index]
-				}
-				request = bytes.Replace(b[:n], []byte("http://"+host), nil, 1)
-			} else {
-				return
-			}
-		}
-
-		host, port = splitHostPort(host)
-		if port == 0 {
-			port = 80
-		}
-
-		conf, ok := ConfigLookup(host)
-
-		if ok {
-			if conf.Option&OPT_PROXY == 0 {
-				logPrintln(1, "HTTP:", host, port, conf)
-
-				_, ips := NSLookup(host, conf.Option, conf.Server)
-				if len(ips) == 0 {
-					logPrintln(1, host, "no such host")
-					return
-				}
-
-				if b[0] == 0x16 {
-					conn, err = Dial(ips, port, request, &conf)
-					if err != nil {
-						logPrintln(1, host, err)
-						return
-					}
-				} else {
-					if conf.Option&OPT_HTTPS != 0 {
-						HttpMove(client, "https", request)
-						return
-					} else if conf.Option&OPT_MOVE != 0 {
-						HttpMove(client, conf.Server, request)
-						return
-					} else if conf.Option&OPT_STRIP != 0 {
-						ip := ips[rand.Intn(len(ips))]
-						conn, err = DialStrip(ip.String(), "")
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-						_, err = conn.Write(request)
-					} else {
-						conn, err = HTTP(client, ips, port, request, &conf)
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-						io.Copy(client, conn)
-						return
-					}
-				}
-			} else {
-				logPrintln(1, "HTTPoverProxy:", client.RemoteAddr(), "->", host, port, conf)
-
-				conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), conf.Server, b[:n], &conf)
-				if err != nil {
-					logPrintln(1, host, err)
-					return
-				}
-			}
-		} else {
-			host = net.JoinHostPort(host, strconv.Itoa(port))
-			logPrintln(1, host)
-
-			conn, err = net.Dial("tcp", host)
-			if err != nil {
-				logPrintln(1, err)
-				return
-			}
-			_, err = conn.Write(b[:n])
-			if err != nil {
-				logPrintln(1, err)
-				return
-			}
-		}
-	}
-
-	defer conn.Close()
-
-	_, _, err := relay(client, conn)
-	if err != nil {
-		if err, ok := err.(net.Error); ok && err.Timeout() {
-			return
-		}
-		logPrintln(1, "relay error:", err)
-	}
 }
 
 func SNIProxy(client net.Conn) {
