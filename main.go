@@ -132,6 +132,7 @@ func main() {
 		SystemProxy     string `json:"proxy,omitempty"`
 		DnsListenAddr   string `json:"dns,omitempty"`
 		Device          string `json:"device,omitempty"`
+		UDPDevice       string `json:"udpdev,omitempty"`
 		Clients         string `json:"clients,omitempty"`
 		LogLevel        int    `json:"log,omitempty"`
 		MaxProcs        int    `json:"maxprocs,omitempty"`
@@ -148,6 +149,7 @@ func main() {
 		flag.StringVar(&flags.SystemProxy, "proxy", "", "Proxy")
 		flag.StringVar(&flags.DnsListenAddr, "dns", "", "DNS")
 		flag.StringVar(&flags.Device, "device", "", "Device")
+		flag.StringVar(&flags.UDPDevice, "udpdev", "", "UDP Device")
 		flag.StringVar(&flags.Clients, "clients", "", "Clients")
 		flag.IntVar(&flags.LogLevel, "log", 0, "LogLevel")
 		flag.IntVar(&flags.MaxProcs, "maxprocs", 0, "LogLevel")
@@ -181,6 +183,11 @@ func main() {
 
 	devices := strings.Split(flags.Device, ",")
 	if !ptcp.ConnectionMonitor(devices) {
+		return
+	}
+
+	udpdevices := strings.Split(flags.UDPDevice, ",")
+	if !ptcp.UDPMonitor(udpdevices) {
 		return
 	}
 
