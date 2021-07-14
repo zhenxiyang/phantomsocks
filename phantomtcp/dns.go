@@ -219,6 +219,47 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	}
 }
 
+func JumboUDPlookup(request []byte, address string) ([]byte, error) {
+	raddr, err := net.ResolveUDPAddr("udp", address)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.Dial("udp", address)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	laddr, err := net.ResolveUDPAddr("udp", conn.LocalAddr().String())
+	if err != nil {
+		return nil, err
+	}
+	logPrintln(1, laddr, raddr)
+	err = SendJumboUDPPacket(laddr, raddr, request)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetReadDeadline(time.Now().Add(time.Second * 5))
+	response := make([]byte, 1024)
+
+	if request[11] == 0 {
+		n, err := conn.Read(response[:])
+		return response[:n], err
+	} else {
+		var n int
+		for {
+			n, err = conn.Read(response[:])
+			if err != nil {
+				return nil, err
+			}
+
+			if request[11] == 0 || response[11] > 0 {
+				break
+			}
+		}
+		return response[:n], nil
+	}
+}
+
 func GetQName(buf []byte) (string, int, int) {
 	bufflen := len(buf)
 	if bufflen < 13 {
@@ -709,6 +750,9 @@ func NSLookup(name string, option uint32, server string) (int, []net.IP) {
 		case "tls:":
 			request = PackRequest(name, qtype, options.ECS)
 			response, err = TLSlookup(request, _server[2])
+		case "jumbo:":
+			request = PackRequest(name, qtype, options.ECS)
+			response, err = JumboUDPlookup(request, _server[2])
 		default:
 			NoseLock.Lock()
 			index := len(Nose)
@@ -851,6 +895,9 @@ func NSRequest(request []byte, cache bool) []byte {
 			case "tls:":
 				request = PackRequest(name, _qtype, options.ECS)
 				response, err = TLSlookup(request, serverAddr[2])
+			case "jumbo:":
+				request = PackRequest(name, _qtype, options.ECS)
+				response, err = JumboUDPlookup(request, serverAddr[2])
 			default:
 				NoseLock.Lock()
 				index := len(Nose)
@@ -878,7 +925,10 @@ func NSRequest(request []byte, cache bool) []byte {
 				response, err = TCPlookup(request, serverAddr[2])
 			case "tls:":
 				response, err = TLSlookup(request, serverAddr[2])
+			case "jumbo:":
+				response, err = JumboUDPlookup(request, serverAddr[2])
 			default:
+				logPrintln(1, "unknown protocol")
 				return nil
 			}
 		} else {

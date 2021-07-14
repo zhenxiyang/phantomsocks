@@ -186,9 +186,11 @@ func main() {
 		return
 	}
 
-	udpdevices := strings.Split(flags.UDPDevice, ",")
-	if !ptcp.UDPMonitor(udpdevices) {
-		return
+	if flags.UDPDevice != "" {
+		udpdevices := strings.Split(flags.UDPDevice, ",")
+		if !ptcp.UDPMonitor(udpdevices) {
+			return
+		}
 	}
 
 	ptcp.LogLevel = flags.LogLevel

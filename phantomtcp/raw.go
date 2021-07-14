@@ -249,3 +249,61 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 
 	return nil
 }
+
+func SendJumboUDPPacket(laddr, raddr *net.UDPAddr, payload []byte) error {
+	var sa syscall.Sockaddr
+	var lsa syscall.Sockaddr
+	var domain int
+
+	var outgoingPacket [9000]byte
+	packetsize := len(payload)
+	ip4 := raddr.IP.To4()
+	if ip4 != nil {
+		copy(outgoingPacket[:], []byte{69, 0, 0, 0, 141, 152, 64, 0, 64, 17, 0, 0})
+		packetsize += 8
+		//binary.BigEndian.PutUint16(outgoingPacket[24:], uint16(packetsize))
+		binary.BigEndian.PutUint16(outgoingPacket[24:], uint16(0))
+		packetsize += 20
+		binary.BigEndian.PutUint16(outgoingPacket[2:], uint16(packetsize))
+		copy(outgoingPacket[12:], laddr.IP.To4())
+		copy(outgoingPacket[16:], ip4)
+		binary.BigEndian.PutUint16(outgoingPacket[20:], uint16(laddr.Port))
+		binary.BigEndian.PutUint16(outgoingPacket[22:], uint16(raddr.Port))
+		copy(outgoingPacket[28:], payload)
+
+		binary.BigEndian.PutUint16(outgoingPacket[26:], ComputeUDPChecksum(outgoingPacket[:packetsize]))
+
+		var ip [4]byte
+		copy(ip[:], ip4)
+		sa = &syscall.SockaddrInet4{Addr: ip, Port: 0}
+		copy(ip[:], laddr.IP.To4())
+		lsa = &syscall.SockaddrInet4{Addr: ip, Port: 0}
+		domain = syscall.AF_INET
+	} else {
+		var ip [16]byte
+		copy(ip[:], raddr.IP.To16())
+		sa = &syscall.SockaddrInet6{Addr: ip, Port: 0}
+		copy(ip[:], laddr.IP.To16())
+		lsa = &syscall.SockaddrInet6{Addr: ip, Port: 0}
+		domain = syscall.AF_INET6
+	}
+
+	raw_fd, err := syscall.Socket(domain, syscall.SOCK_RAW, syscall.IPPROTO_RAW)
+	if err != nil {
+		syscall.Close(raw_fd)
+		return err
+	}
+	err = syscall.Bind(raw_fd, lsa)
+	if err != nil {
+		syscall.Close(raw_fd)
+		return err
+	}
+
+	err = syscall.Sendto(raw_fd, outgoingPacket[:packetsize], 0, sa)
+	syscall.Close(raw_fd)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
