@@ -294,14 +294,17 @@ func udpMonitor(device string) {
 		}
 
 		//link := packet.LinkLayer()
-		ip := packet.NetworkLayer()
-		udp := packet.TransportLayer().(*layers.UDP)
+		network := packet.NetworkLayer()
+		transport := packet.TransportLayer()
 
-		switch ip := ip.(type) {
-		case *layers.IPv4:
-			src := net.UDPAddr{IP: ip.SrcIP, Port: int(udp.SrcPort)}
-			dst := net.UDPAddr{IP: ip.DstIP, Port: int(udp.DstPort)}
-			logPrintln(1, src, "->", dst)
+		switch transport.(type) {
+		case *layers.UDP:
+			switch network := network.(type) {
+			case *layers.IPv4:
+				src := net.UDPAddr{IP: network.SrcIP, Port: int(transport.SrcPort)}
+				dst := net.UDPAddr{IP: network.DstIP, Port: int(transport.DstPort)}
+				logPrintln(1, src, "->", dst)
+			}
 		}
 	}
 }
