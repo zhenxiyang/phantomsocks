@@ -297,10 +297,10 @@ func udpMonitor(device string) {
 		network := packet.NetworkLayer()
 		transport := packet.TransportLayer()
 
-		switch transport.(type) {
-		case *layers.UDP:
-			switch network := network.(type) {
-			case *layers.IPv4:
+		switch network := network.(type) {
+		case *layers.IPv4:
+			switch transport := transport.(type) {
+			case *layers.UDP:
 				src := net.UDPAddr{IP: network.SrcIP, Port: int(transport.SrcPort)}
 				dst := net.UDPAddr{IP: network.DstIP, Port: int(transport.DstPort)}
 				logPrintln(1, src, "->", dst)
