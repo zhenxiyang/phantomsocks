@@ -160,7 +160,11 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		device = conf.Device
 		if b != nil {
 			if conf.Option|OPT_MODIFY != 0 {
-				offset, length = GetSNI(b)
+				if conf.Option|OPT_TFO != 0 {
+					length = len(b)
+				} else {
+					offset, length = GetSNI(b)
+				}
 			}
 		}
 	}
@@ -175,25 +179,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		fakepayload := make([]byte, fakepaylen)
 		copy(fakepayload, b[:fakepaylen])
 
-		min_dot := offset + length
-		max_dot := offset
-		for i := offset; i < offset+length; i++ {
-			if fakepayload[i] == '.' {
-				if i < min_dot {
-					min_dot = i
-				}
-				if i > max_dot {
-					max_dot = i
-				}
-			} else {
-				fakepayload[i] = domainBytes[rand.Intn(len(domainBytes))]
-			}
-		}
-		if min_dot == max_dot {
-			min_dot = offset
-		}
-		cut := (min_dot + max_dot) / 2
-
+		cut := (offset + length) / 2
 		var tfo_payload []byte = nil
 		if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
 			if (conf.Option & OPT_TFO) != 0 {
@@ -201,6 +187,25 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 			} else {
 				tfo_payload = b[:cut]
 			}
+		} else {
+			min_dot := offset + length
+			max_dot := offset
+			for i := offset; i < offset+length; i++ {
+				if fakepayload[i] == '.' {
+					if i < min_dot {
+						min_dot = i
+					}
+					if i > max_dot {
+						max_dot = i
+					}
+				} else {
+					fakepayload[i] = domainBytes[rand.Intn(len(domainBytes))]
+				}
+			}
+			if min_dot == max_dot {
+				min_dot = offset
+			}
+			cut = (min_dot + max_dot) / 2
 		}
 
 		var synpacket *ConnectionInfo

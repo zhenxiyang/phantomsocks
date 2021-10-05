@@ -24,14 +24,19 @@ var HTTPSCache sync.Map
 var Nose []string = []string{"phantom.socks"}
 var NoseLock sync.Mutex
 
-func TCPlookup(request []byte, address string) ([]byte, error) {
+func TCPlookup(request []byte, address string, conf *Config) ([]byte, error) {
 	data := make([]byte, 1024)
 	binary.BigEndian.PutUint16(data[:2], uint16(len(request)))
 	copy(data[2:], request)
 
 	var conn net.Conn
-	var err error
-	if false {
+	var err error = nil
+	if conf != nil {
+		addr, err := net.ResolveTCPAddr("tcp", address)
+		if err != nil {
+			return nil, err
+		}
+		conn, err = Dial([]net.IP{addr.IP}, addr.Port, data[:len(request)+2], conf)
 	} else {
 		conn, err = net.DialTimeout("tcp", address, time.Second*5)
 		if err != nil {
@@ -41,9 +46,10 @@ func TCPlookup(request []byte, address string) ([]byte, error) {
 		defer conn.Close()
 
 		_, err = conn.Write(data[:len(request)+2])
-		if err != nil {
-			return nil, err
-		}
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	length := 0
@@ -72,7 +78,7 @@ func TCPlookupDNS64(request []byte, address string, offset int, prefix []byte) (
 	offset4 := offset
 
 	binary.BigEndian.PutUint16(request[offset-4:offset-2], 1)
-	response, err := TCPlookup(request, address)
+	response, err := TCPlookup(request, address, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +263,43 @@ func JumboUDPlookup(request []byte, address string) ([]byte, error) {
 			}
 		}
 		return response[:n], nil
+	}
+}
+
+func TFOlookup(request []byte, address string) ([]byte, error) {
+	data := make([]byte, 1024)
+	binary.BigEndian.PutUint16(data[:2], uint16(len(request)))
+	copy(data[2:], request)
+
+	var conn net.Conn
+	var err error = nil
+
+	addr, err := net.ResolveTCPAddr("tcp", address)
+	if err != nil {
+		return nil, err
+	}
+	conn, _, err = DialConnInfo(nil, addr, &Config{OPT_TFO, 2, 0, 0, "", ""}, data[:len(request)+2])
+	if err != nil {
+		return nil, err
+	}
+
+	length := 0
+	recvlen := 0
+	for {
+		if recvlen >= 1024 {
+			return nil, nil
+		}
+		n, err := conn.Read(data[recvlen:])
+		if err != nil {
+			return nil, err
+		}
+		if length == 0 {
+			length = int(binary.BigEndian.Uint16(data[:2]) + 2)
+		}
+		recvlen += n
+		if recvlen >= length {
+			return data[2:recvlen], nil
+		}
 	}
 }
 
@@ -746,13 +789,13 @@ func NSLookup(name string, option uint32, server string) (int, []net.IP) {
 			response, err = UDPlookup(request, _server[2])
 		case "tcp:":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = TCPlookup(request, _server[2])
+			response, err = TCPlookup(request, _server[2], nil)
 		case "tls:":
 			request = PackRequest(name, qtype, options.ECS)
 			response, err = TLSlookup(request, _server[2])
-		case "jumbo:":
+		case "tfo:":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = JumboUDPlookup(request, _server[2])
+			response, err = TFOlookup(request, _server[2])
 		default:
 			NoseLock.Lock()
 			index := len(Nose)
@@ -891,13 +934,13 @@ func NSRequest(request []byte, cache bool) []byte {
 				response, err = UDPlookup(request, serverAddr[2])
 			case "tcp:":
 				request = PackRequest(name, _qtype, options.ECS)
-				response, err = TCPlookup(request, serverAddr[2])
+				response, err = TCPlookup(request, serverAddr[2], nil)
 			case "tls:":
 				request = PackRequest(name, _qtype, options.ECS)
 				response, err = TLSlookup(request, serverAddr[2])
-			case "jumbo:":
+			case "tfo:":
 				request = PackRequest(name, _qtype, options.ECS)
-				response, err = JumboUDPlookup(request, serverAddr[2])
+				response, err = TFOlookup(request, serverAddr[2])
 			default:
 				NoseLock.Lock()
 				index := len(Nose)
@@ -922,11 +965,11 @@ func NSRequest(request []byte, cache bool) []byte {
 			case "udp:":
 				response, err = UDPlookup(request, serverAddr[2])
 			case "tcp:":
-				response, err = TCPlookup(request, serverAddr[2])
+				response, err = TCPlookup(request, serverAddr[2], nil)
 			case "tls:":
 				response, err = TLSlookup(request, serverAddr[2])
-			case "jumbo:":
-				response, err = JumboUDPlookup(request, serverAddr[2])
+			case "tfo:":
+				response, err = TFOlookup(request, serverAddr[2])
 			default:
 				logPrintln(1, "unknown protocol")
 				return nil
