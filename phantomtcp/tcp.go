@@ -159,8 +159,8 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 	if conf != nil {
 		device = conf.Device
 		if b != nil {
-			if conf.Option|OPT_MODIFY != 0 {
-				if conf.Option|OPT_TFO != 0 {
+			if conf.Option&OPT_MODIFY != 0 {
+				if conf.Option&OPT_TFO != 0 {
 					length = len(b)
 				} else {
 					offset, length = GetSNI(b)
