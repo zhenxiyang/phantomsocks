@@ -78,6 +78,7 @@ Windows(windivert):
   s-seg             #the first tcp payload will be very small
   tfo               #SYN packet will take a part of data when the server supports TCP Fast Open
   https             #domains below will be move to https when using http on port 80
+  df                #the true tcp packets will not be fragmented
   ipv4              #domains below will only connect via ipv4
   ipv6              #domains below will only connect via ipv6
   proxy             #domains below will connect via above proxy server
