@@ -49,7 +49,7 @@ Windows(windivert):
 
 ## Configure
 ```
-  server=*          #Domain below will use this DNS 
+  server=*          #domains below will use this DNS or proxy server
   ttl=*             #the fake tcp packet will use this TTL
   domain=ip,ip,...  #this domain will use these IPs
   domain            #this domain will be resolved by DNS
@@ -62,9 +62,13 @@ Windows(windivert):
   server=tcp://8.8.8.8:53
   server=tls://8.8.8.8:853
   server=udp://8.8.8.8:53/ecs=35.190.247.1
+  server=http://proxyaddr:port                     #http proxy server
+  server=socks://proxyaddr:port                    #socks5 proxy server
+  server=ss://method:password@hostname:port        #Shadowsocks proxy server
 ```
 ### methods:
 ```
+  none              #no modification
   ttl               #the fake tcp packets will use the TTL you set
   w-md5             #the fake tcp packets will have a wrong md5 option
   w-csum            #the fake tcp packets will have a wrong checksum
@@ -73,7 +77,10 @@ Windows(windivert):
   w-time            #the fake tcp packets will have a wrong timestamp
   s-seg             #the first tcp payload will be very small
   tfo               #SYN packet will take a part of data when the server supports TCP Fast Open
-  https             #the domain below will be move to https when using http on port 80
+  https             #domains below will be move to https when using http on port 80
+  ipv4              #domains below will only connect via ipv4
+  ipv6              #domains below will only connect via ipv6
+  proxy             #domains below will connect via above proxy server
 ```
 ## Installation
 go get github.com/macronut/phantomsocks
