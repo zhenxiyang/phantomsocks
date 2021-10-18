@@ -103,7 +103,7 @@ raw socket is used by default on Linux/mipsle, you can edit pcap.go & raw.go to 
 env GOOS=linux GOARCH=mipsle go build
 ```
 ### windivert version
-raw socket is Windows only and used by default on Windows, you can edit windivert.go & pcap.go & pcap_windows.go to use pcap on Windows
+windivert is Windows only and used by default on Windows, you can edit windivert.go & pcap.go & pcap_windows.go to use pcap on Windows
 ```
 env GOOS=windows GOARCH=amd64 go build
 ```
