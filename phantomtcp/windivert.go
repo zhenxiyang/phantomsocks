@@ -1,5 +1,5 @@
 // +build windows
-//// +build !windows
+// +build windivert
 
 package phantomtcp
 

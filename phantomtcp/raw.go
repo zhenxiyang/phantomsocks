@@ -1,9 +1,10 @@
 // +build linux
-// +build mipsle
+// +build rawsocket
 
 package phantomtcp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
@@ -306,4 +307,8 @@ func SendJumboUDPPacket(laddr, raddr *net.UDPAddr, payload []byte) error {
 	}
 
 	return nil
+}
+
+func UDPMonitor(devices []string) bool {
+	return true
 }

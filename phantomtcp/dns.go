@@ -225,6 +225,7 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	}
 }
 
+/*
 func JumboUDPlookup(request []byte, address string) ([]byte, error) {
 	raddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
@@ -265,6 +266,7 @@ func JumboUDPlookup(request []byte, address string) ([]byte, error) {
 		return response[:n], nil
 	}
 }
+*/
 
 func TFOlookup(request []byte, address string) ([]byte, error) {
 	data := make([]byte, 1024)

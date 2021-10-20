@@ -1,5 +1,6 @@
 // +build !linux
-// +build !windows
+// +build !rawsocket
+// +build !windivert
 
 package phantomtcp
 
