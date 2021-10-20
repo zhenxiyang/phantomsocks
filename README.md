@@ -61,10 +61,12 @@ Windows(windivert):
   server=udp://8.8.8.8:53
   server=tcp://8.8.8.8:53
   server=tls://8.8.8.8:853
+  server=tfo://8.8.8.8:53 #Linux
+  
   server=udp://8.8.8.8:53/ecs=35.190.247.1
-  server=http://proxyaddr:port                     #http proxy server
-  server=socks://proxyaddr:port                    #socks5 proxy server
-  server=ss://method:password@hostname:port        #Shadowsocks proxy server
+  server=http://hostname:port                     #http proxy server
+  server=socks://hostname:port                    #socks5 proxy server
+  server=ss://method:password@hostname:port       #Shadowsocks proxy server
 ```
 ### methods:
 ```
@@ -98,17 +100,17 @@ sudo apt-get install -y libpcap-dev
 go build -ldflags '-extldflags "-static"'
 ```
 ### raw socket version
-raw socket is used by default on Linux/mipsle, you can edit pcap.go & raw.go to use this version on all Linux
+raw socket is Linux only
 ```
-env GOOS=linux GOARCH=mipsle go build
+go build -tags rawsocket
 ```
 ### windivert version
-windivert is Windows only and used by default on Windows, you can edit windivert.go & pcap.go & pcap_windows.go to use pcap on Windows
+windivert is Windows only
 ```
-env GOOS=windows GOARCH=amd64 go build
+env GOOS=windows GOARCH=amd64 go build -tags windivert
 ```
 
-### cross & static compile on Ubuntu 18.04
+### cross & static compile pcap version on Ubuntu 18.04
 Install dependencies
 ```
 apt-get install git autoconf automake bison build-essential flex gawk gettext gperf libtool pkg-config libpcap-dev
