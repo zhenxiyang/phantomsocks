@@ -17,10 +17,8 @@ phantomsocks
     	PACServer
   -sni string
     	SNIProxy
-  -socks string 
+  -socks string
     	Socks proxy
-  -http string
-      HTTP proxy
   -redir string
       Netfilter TCP redirect
   -proxy string
