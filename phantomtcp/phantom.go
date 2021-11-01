@@ -54,7 +54,9 @@ const (
 	OPT_IPV6  = 0x1 << 21
 	OPT_MODE2 = 0x1 << 22
 	OPT_DF    = 0x1 << 23
-	OPT_PROXY = 0x1 << 24
+	OPT_RAND  = 0x1 << 24
+
+	OPT_PROXY = 0x1 << 31
 )
 
 const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME
@@ -85,6 +87,8 @@ var MethodMap = map[string]uint32{
 	"ipv6":  OPT_IPV6,
 	"mode2": OPT_MODE2,
 	"df":    OPT_DF,
+	"rand":  OPT_RAND,
+
 	"proxy": OPT_PROXY,
 }
 

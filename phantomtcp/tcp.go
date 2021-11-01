@@ -179,13 +179,18 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 		fakepayload := make([]byte, fakepaylen)
 		copy(fakepayload, b[:fakepaylen])
 
-		cut := (offset + length) / 2
+		cut := offset + length/2
 		var tfo_payload []byte = nil
 		if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
 			if (conf.Option & OPT_TFO) != 0 {
 				tfo_payload = b
 			} else {
 				tfo_payload = b[:cut]
+			}
+		} else if conf.Option&OPT_RAND != 0 {
+			_, err = rand.Read(fakepayload)
+			if err != nil {
+				logPrintln(1, err)
 			}
 		} else {
 			min_dot := offset + length
@@ -205,6 +210,7 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 			if min_dot == max_dot {
 				min_dot = offset
 			}
+
 			cut = (min_dot + max_dot) / 2
 		}
 
