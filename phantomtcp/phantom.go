@@ -40,11 +40,10 @@ const (
 	OPT_WSEQ  = 0x1 << 6
 	OPT_WTIME = 0x1 << 7
 
-	OPT_SSEG      = 0x1 << 8
-	OPT_TFO       = 0x1 << 9
-	OPT_HTFO      = 0x1 << 10
-	OPT_KEEPALIVE = 0x1 << 11
-	OPT_SYNX2     = 0x1 << 12
+	OPT_TFO       = 0x1 << 8
+	OPT_HTFO      = 0x1 << 9
+	OPT_KEEPALIVE = 0x1 << 10
+	OPT_SYNX2     = 0x1 << 11
 
 	OPT_HTTP  = 0x1 << 16
 	OPT_HTTPS = 0x1 << 17
@@ -54,7 +53,10 @@ const (
 	OPT_IPV6  = 0x1 << 21
 	OPT_MODE2 = 0x1 << 22
 	OPT_DF    = 0x1 << 23
-	OPT_RAND  = 0x1 << 24
+	OPT_SAT   = 0x1 << 24
+	OPT_RAND  = 0x1 << 25
+	OPT_SSEG  = 0x1 << 26
+	OPT_1SEG  = 0x1 << 27
 
 	OPT_PROXY = 0x1 << 31
 )
@@ -73,7 +75,6 @@ var MethodMap = map[string]uint32{
 	"w-seq":  OPT_WSEQ,
 	"w-time": OPT_WTIME,
 
-	"s-seg":      OPT_SSEG,
 	"tfo":        OPT_TFO,
 	"half-tfo":   OPT_HTFO,
 	"keep-alive": OPT_KEEPALIVE,
@@ -87,7 +88,10 @@ var MethodMap = map[string]uint32{
 	"ipv6":  OPT_IPV6,
 	"mode2": OPT_MODE2,
 	"df":    OPT_DF,
+	"sat":   OPT_SAT,
 	"rand":  OPT_RAND,
+	"s-seg": OPT_SSEG,
+	"1-seg": OPT_1SEG,
 
 	"proxy": OPT_PROXY,
 }

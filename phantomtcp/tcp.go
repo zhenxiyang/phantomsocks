@@ -256,24 +256,11 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				}
 			}
 		} else {
-			if conf.Option&OPT_SSEG != 0 {
-				_, err = conn.Write(b[:4])
-				if err != nil {
-					conn.Close()
-					return nil, err
-				}
-			}
-
 			if conf.Option&OPT_MODE2 != 0 {
 				synpacket.TCP.Seq += uint32(cut)
 				fakepayload = fakepayload[cut:]
 				count = 2
 			} else {
-				if conf.Option&OPT_DF != 0 {
-					for i := 0; i < length; i++ {
-						fakepayload[i] = byte(rand.Intn(256))
-					}
-				}
 				err = ModifyAndSendPacket(synpacket, fakepayload, conf.Option, conf.TTL, count)
 				if err != nil {
 					conn.Close()
@@ -281,11 +268,21 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 				}
 			}
 
-			if conf.Option&OPT_SSEG != 0 {
-				_, err = conn.Write(b[4:cut])
-			} else {
-				_, err = conn.Write(b[:cut])
+			SegOffset := 0
+			if conf.Option&(OPT_SSEG|OPT_1SEG) != 0 {
+				if conf.Option&OPT_1SEG != 0 {
+					SegOffset = 1
+				} else {
+					SegOffset = 4
+				}
+				_, err = conn.Write(b[:SegOffset])
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
 			}
+
+			_, err = conn.Write(b[SegOffset:cut])
 			if err != nil {
 				conn.Close()
 				return nil, err
@@ -301,6 +298,12 @@ func Dial(addresses []net.IP, port int, b []byte, conf *Config) (net.Conn, error
 			if err != nil {
 				conn.Close()
 				return nil, err
+			}
+
+			if conf.Option&OPT_SAT != 0 {
+				synpacket.TCP.Seq += uint32(len(b))
+				_, err = rand.Read(fakepayload)
+				err = ModifyAndSendPacket(synpacket, fakepayload, conf.Option, conf.TTL, 2)
 			}
 		}
 
