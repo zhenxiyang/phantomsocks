@@ -375,7 +375,7 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 	divertpacket.PacketLen = uint(len(divertpacket.Raw))
 	divertpacket.Addr = &divertAddr
 	divertpacket.ParseHeaders()
-	divertpacket.CalcNewChecksum(winDivert)
+	//divertpacket.CalcNewChecksum(winDivert)
 
 	for i := 0; i < count; i++ {
 		_, err := winDivert.Send(&divertpacket)
