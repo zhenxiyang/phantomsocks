@@ -1,10 +1,13 @@
 package phantomtcp
 
 import (
+	"bytes"
 	"crypto/tls"
 	"encoding/binary"
+	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -225,48 +228,79 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	}
 }
 
-/*
-func JumboUDPlookup(request []byte, address string) ([]byte, error) {
-	raddr, err := net.ResolveUDPAddr("udp", address)
+func HTTPSlookup(request []byte, address, host string) ([]byte, error) {
+	serverName, _, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, err
+		serverName = address
+		address += ":443"
 	}
-	conn, err := net.Dial("udp", address)
+
+	if net.ParseIP(serverName) != nil {
+		serverName = host
+	} else if host == "" {
+		host = serverName
+	}
+
+	conf := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         serverName,
+	}
+	conn, err := tls.Dial("tcp", address, conf)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	laddr, err := net.ResolveUDPAddr("udp", conn.LocalAddr().String())
-	if err != nil {
-		return nil, err
-	}
-	logPrintln(1, laddr, raddr)
-	err = SendJumboUDPPacket(laddr, raddr, request)
-	if err != nil {
-		return nil, err
-	}
-	conn.SetReadDeadline(time.Now().Add(time.Second * 5))
-	response := make([]byte, 1024)
 
-	if request[11] == 0 {
-		n, err := conn.Read(response[:])
-		return response[:n], err
-	} else {
-		var n int
-		for {
-			n, err = conn.Read(response[:])
-			if err != nil {
-				return nil, err
+	httpRequest := fmt.Sprintf("POST /dns-query HTTP/1.1\r\nHost: %s\r\nAccept: application/dns-message\r\nContent-Type: application/dns-message\r\nConnection: close\r\nContent-Length: %d\r\n\r\n", host, len(request))
+	logPrintln(5, httpRequest)
+	_, err = conn.Write([]byte(httpRequest))
+	if err != nil {
+		return nil, err
+	}
+	_, err = conn.Write(request)
+	if err != nil {
+		return nil, err
+	}
+
+	data := make([]byte, 2048)
+	recvlen := 0
+	headerLen := 0
+	contentLength := 0
+	for {
+		n, err := conn.Read(data[recvlen:])
+		recvlen += n
+
+		if recvlen > 0 {
+			if contentLength == 0 {
+				offset := bytes.Index(data[:recvlen], []byte("\r\n\r\n"))
+				if offset != -1 {
+					headerLen = offset + 4
+					header := string(data[:headerLen])
+					logPrintln(5, header)
+					for _, line := range strings.Split(header, "\r\n") {
+						field := strings.SplitN(line, ": ", 2)
+						if len(field) > 1 {
+							if field[0] == "Content-Length" {
+								contentLength, err = strconv.Atoi(field[1])
+								continue
+							}
+						}
+					}
+				}
 			}
 
-			if request[11] == 0 || response[11] > 0 {
-				break
+			if (recvlen - headerLen) >= contentLength {
+				return data[headerLen : headerLen+contentLength], nil
 			}
 		}
-		return response[:n], nil
+
+		if err != nil || n == 0 {
+			return nil, err
+		}
 	}
+
+	return nil, nil
 }
-*/
 
 func TFOlookup(request []byte, address string) ([]byte, error) {
 	data := make([]byte, 1024)
@@ -618,6 +652,7 @@ type ServerOptions struct {
 	ECS  string
 	Type string
 	PD   string
+	Host string
 }
 
 func ParseOptions(options string) ServerOptions {
@@ -633,6 +668,8 @@ func ParseOptions(options string) ServerOptions {
 				serverOpts.PD = key[1]
 			case "type":
 				serverOpts.Type = key[1]
+			case "host":
+				serverOpts.Host = key[1]
 			}
 		}
 	}
@@ -795,6 +832,9 @@ func NSLookup(name string, option uint32, server string) (int, []net.IP) {
 		case "tls:":
 			request = PackRequest(name, qtype, options.ECS)
 			response, err = TLSlookup(request, _server[2])
+		case "https:":
+			request = PackRequest(name, qtype, options.ECS)
+			response, err = HTTPSlookup(request, _server[2], options.Host)
 		case "tfo:":
 			request = PackRequest(name, qtype, options.ECS)
 			response, err = TFOlookup(request, _server[2])
@@ -921,38 +961,31 @@ func NSRequest(request []byte, cache bool) []byte {
 		return BuildResponse(request, qtype, 0, nil)
 	}
 
-	if method != 0 {
-		if len(serverAddr) > 2 {
-			if qtype == 28 {
-				return BuildResponse(request, qtype, 0, nil)
-			}
-			_qtype := uint16(qtype)
-			if method&OPT_IPV6 != 0 {
-				_qtype = 28
-			}
-			switch serverAddr[0] {
-			case "udp:":
-				request = PackRequest(name, _qtype, options.ECS)
-				response, err = UDPlookup(request, serverAddr[2])
-			case "tcp:":
-				request = PackRequest(name, _qtype, options.ECS)
-				response, err = TCPlookup(request, serverAddr[2], nil)
-			case "tls:":
-				request = PackRequest(name, _qtype, options.ECS)
-				response, err = TLSlookup(request, serverAddr[2])
-			case "tfo:":
-				request = PackRequest(name, _qtype, options.ECS)
-				response, err = TFOlookup(request, serverAddr[2])
-			default:
-				NoseLock.Lock()
-				index := len(Nose)
-				Nose = append(Nose, name)
-				NoseLock.Unlock()
-				StoreDNSCache(name, 1, DomainIP{index, 0, nil})
-				StoreDNSCache(name, 28, DomainIP{0, 0, nil})
-				return BuildLie(request, qtype, index)
-			}
-		} else {
+	if len(serverAddr) > 2 {
+		if qtype == 28 {
+			return BuildResponse(request, qtype, 0, nil)
+		}
+		_qtype := uint16(qtype)
+		if method&OPT_IPV6 != 0 {
+			_qtype = 28
+		}
+		switch serverAddr[0] {
+		case "udp:":
+			request = PackRequest(name, _qtype, options.ECS)
+			response, err = UDPlookup(request, serverAddr[2])
+		case "tcp:":
+			request = PackRequest(name, _qtype, options.ECS)
+			response, err = TCPlookup(request, serverAddr[2], nil)
+		case "tls:":
+			request = PackRequest(name, _qtype, options.ECS)
+			response, err = TLSlookup(request, serverAddr[2])
+		case "https:":
+			request = PackRequest(name, _qtype, options.ECS)
+			response, err = HTTPSlookup(request, serverAddr[2], options.Host)
+		case "tfo:":
+			request = PackRequest(name, _qtype, options.ECS)
+			response, err = TFOlookup(request, serverAddr[2])
+		default:
 			NoseLock.Lock()
 			index := len(Nose)
 			Nose = append(Nose, name)
@@ -962,21 +995,28 @@ func NSRequest(request []byte, cache bool) []byte {
 			return BuildLie(request, qtype, index)
 		}
 	} else {
-		if len(serverAddr) > 2 {
-			switch serverAddr[0] {
-			case "udp:":
-				response, err = UDPlookup(request, serverAddr[2])
-			case "tcp:":
-				response, err = TCPlookup(request, serverAddr[2], nil)
-			case "tls:":
-				response, err = TLSlookup(request, serverAddr[2])
-			case "tfo:":
-				response, err = TFOlookup(request, serverAddr[2])
-			default:
-				logPrintln(1, "unknown protocol")
-				return nil
+		switch serverAddr[0] {
+		case "udp:":
+			response, err = UDPlookup(request, serverAddr[2])
+		case "tcp:":
+			response, err = TCPlookup(request, serverAddr[2], nil)
+		case "tls:":
+			response, err = TLSlookup(request, serverAddr[2])
+		case "https:":
+			response, err = HTTPSlookup(request, serverAddr[2], "")
+		case "tfo:":
+			response, err = TFOlookup(request, serverAddr[2])
+		default:
+			if method != 0 {
+				NoseLock.Lock()
+				index := len(Nose)
+				Nose = append(Nose, name)
+				NoseLock.Unlock()
+				StoreDNSCache(name, 1, DomainIP{index, 0, nil})
+				StoreDNSCache(name, 28, DomainIP{0, 0, nil})
+				return BuildLie(request, qtype, index)
 			}
-		} else {
+			logPrintln(1, "unknown protocol")
 			return nil
 		}
 	}
