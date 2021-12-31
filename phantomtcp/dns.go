@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -228,11 +229,15 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	}
 }
 
-func HTTPSlookup(request []byte, address, host string) ([]byte, error) {
+func HTTPSlookup(request []byte, address, host string, path string) ([]byte, error) {
 	serverName, _, err := net.SplitHostPort(address)
 	if err != nil {
 		serverName = address
 		address += ":443"
+	}
+
+	if path == "" {
+		path = "/dns-query"
 	}
 
 	if net.ParseIP(serverName) != nil {
@@ -251,7 +256,7 @@ func HTTPSlookup(request []byte, address, host string) ([]byte, error) {
 	}
 	defer conn.Close()
 
-	httpRequest := fmt.Sprintf("POST /dns-query HTTP/1.1\r\nHost: %s\r\nAccept: application/dns-message\r\nContent-Type: application/dns-message\r\nConnection: close\r\nContent-Length: %d\r\n\r\n", host, len(request))
+	httpRequest := fmt.Sprintf("POST %s HTTP/1.1\r\nHost: %s\r\nAccept: application/dns-message\r\nContent-Type: application/dns-message\r\nConnection: close\r\nContent-Length: %d\r\n\r\n", path, host, len(request))
 	logPrintln(5, httpRequest)
 	_, err = conn.Write([]byte(httpRequest))
 	if err != nil {
@@ -817,7 +822,7 @@ func NSLookup(name string, option uint32, server string) (int, []net.IP) {
 	_server := strings.SplitN(server, "/", 4)
 
 	var options ServerOptions
-	if len(_server) > 3 {
+	if len(_server) > 3 && _server[0] != "https:" {
 		options = ParseOptions(_server[3])
 	}
 
@@ -833,8 +838,13 @@ func NSLookup(name string, option uint32, server string) (int, []net.IP) {
 			request = PackRequest(name, qtype, options.ECS)
 			response, err = TLSlookup(request, _server[2])
 		case "https:":
+			surl, err := url.Parse(server)
+			if err != nil {
+				panic(err)
+			}
+			options = ParseOptions(surl.RawQuery)
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = HTTPSlookup(request, _server[2], options.Host)
+			response, err = HTTPSlookup(request, _server[2], options.Host, surl.Path)
 		case "tfo:":
 			request = PackRequest(name, qtype, options.ECS)
 			response, err = TFOlookup(request, _server[2])
@@ -951,7 +961,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		serverAddr = strings.SplitN(DNS, "/", 4)
 	}
 
-	if len(serverAddr) > 3 {
+	if len(serverAddr) > 3 && serverAddr[0] != "https" {
 		options = ParseOptions(serverAddr[3])
 	}
 
@@ -980,8 +990,19 @@ func NSRequest(request []byte, cache bool) []byte {
 			request = PackRequest(name, _qtype, options.ECS)
 			response, err = TLSlookup(request, serverAddr[2])
 		case "https:":
+			server := ""
+			if ok {
+				server = conf.Server
+			} else {
+				server = DNS
+			}
+			surl, err := url.Parse(server)
+			if err != nil {
+				panic(err)
+			}
+			options = ParseOptions(surl.RawQuery)
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = HTTPSlookup(request, serverAddr[2], options.Host)
+			response, err = HTTPSlookup(request, serverAddr[2], options.Host, surl.Path)
 		case "tfo:":
 			request = PackRequest(name, _qtype, options.ECS)
 			response, err = TFOlookup(request, serverAddr[2])
@@ -1003,7 +1024,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		case "tls:":
 			response, err = TLSlookup(request, serverAddr[2])
 		case "https:":
-			response, err = HTTPSlookup(request, serverAddr[2], "")
+			response, err = HTTPSlookup(request, serverAddr[2], "", "/dns-query")
 		case "tfo:":
 			response, err = TFOlookup(request, serverAddr[2])
 		default:
