@@ -128,7 +128,7 @@ func SocksProxy(client net.Conn) {
 								}
 								_, err = conn.Write(b[:n])
 							} else {
-								conn, err = HTTP(client, ips, 80, b[:n], &conf)
+								conn, err = HTTP(client, ips, port, b[:n], &conf)
 								if err != nil {
 									logPrintln(1, err)
 									return
