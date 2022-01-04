@@ -229,13 +229,15 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	}
 }
 
-func HTTPSlookup(request []byte, address, host string, path string) ([]byte, error) {
+func HTTPSlookup(request []byte, u *url.URL, host string) ([]byte, error) {
+	address := u.Host
 	serverName, _, err := net.SplitHostPort(address)
 	if err != nil {
 		serverName = address
 		address += ":443"
 	}
 
+	path := u.Path
 	if path == "" {
 		path = "/dns-query"
 	}
@@ -820,36 +822,32 @@ func NSLookup(name string, option uint32, server string) (int, []net.IP) {
 	var err error
 
 	var options ServerOptions
-	surl, err := url.Parse(server)
+	u, err := url.Parse(server)
 	if err != nil {
 		logPrintln(1, err)
 		return 0, nil
 	}
-	if surl.RawQuery != "" {
-		options = ParseOptions(surl.RawQuery)
+	if u.RawQuery != "" {
+		options = ParseOptions(u.RawQuery)
 	}
 
-	if surl.Host != "" {
-		serverHost := surl.Host
-		if surl.User != nil {
-			serverHost = surl.User.String() + "@" + surl.Host
-		}
-		switch surl.Scheme {
+	if u.Host != "" {
+		switch u.Scheme {
 		case "udp":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = UDPlookup(request, serverHost)
+			response, err = UDPlookup(request, u.Host)
 		case "tcp":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = TCPlookup(request, serverHost, nil)
+			response, err = TCPlookup(request, u.Host, nil)
 		case "tls":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = TLSlookup(request, serverHost)
+			response, err = TLSlookup(request, u.Host)
 		case "https":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = HTTPSlookup(request, serverHost, options.Host, surl.Path)
+			response, err = HTTPSlookup(request, u, options.Host)
 		case "tfo":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = TFOlookup(request, serverHost)
+			response, err = TFOlookup(request, u.Host)
 		default:
 			NoseLock.Lock()
 			index := len(Nose)
@@ -963,26 +961,21 @@ func NSRequest(request []byte, cache bool) []byte {
 		serverAddr = DNS
 	}
 
-	surl, err := url.Parse(serverAddr)
+	u, err := url.Parse(serverAddr)
 	if err != nil {
 		logPrintln(1, err)
 		return nil
 	}
-	if surl.RawQuery != "" {
-		options = ParseOptions(surl.RawQuery)
-	}
 
-	if options.Type == "A" && qtype == 28 {
-		return BuildResponse(request, qtype, 0, nil)
-	} else if options.Type == "AAAA" && qtype == 1 {
-		return BuildResponse(request, qtype, 0, nil)
-	}
+	if u.RawQuery != "" {
+		options = ParseOptions(u.RawQuery)
 
-	if surl.Host != "" {
-		serverHost := surl.Host
-		if surl.User != nil {
-			serverHost = surl.User.String() + "@" + surl.Host
+		if options.Type == "A" && qtype == 28 {
+			return BuildResponse(request, qtype, 0, nil)
+		} else if options.Type == "AAAA" && qtype == 1 {
+			return BuildResponse(request, qtype, 0, nil)
 		}
+
 		if qtype == 28 {
 			return BuildResponse(request, qtype, 0, nil)
 		}
@@ -990,22 +983,22 @@ func NSRequest(request []byte, cache bool) []byte {
 		if method&OPT_IPV6 != 0 {
 			_qtype = 28
 		}
-		switch surl.Scheme {
+		switch u.Scheme {
 		case "udp":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = UDPlookup(request, serverHost)
+			response, err = UDPlookup(request, u.Host)
 		case "tcp":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TCPlookup(request, serverHost, nil)
+			response, err = TCPlookup(request, u.Host, nil)
 		case "tls":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TLSlookup(request, serverHost)
+			response, err = TLSlookup(request, u.Host)
 		case "https":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = HTTPSlookup(request, serverHost, options.Host, surl.Path)
+			response, err = HTTPSlookup(request, u, options.Host)
 		case "tfo":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TFOlookup(request, serverHost)
+			response, err = TFOlookup(request, u.Host)
 		default:
 			NoseLock.Lock()
 			index := len(Nose)
@@ -1016,7 +1009,7 @@ func NSRequest(request []byte, cache bool) []byte {
 			return BuildLie(request, qtype, index)
 		}
 	} else {
-		switch surl.Scheme {
+		switch u.Scheme {
 		case "udp":
 			response, err = UDPlookup(request, serverAddr)
 		case "tcp":
@@ -1024,7 +1017,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		case "tls":
 			response, err = TLSlookup(request, serverAddr)
 		case "https":
-			response, err = HTTPSlookup(request, serverAddr, "", "/dns-query")
+			response, err = HTTPSlookup(request, u, "")
 		case "tfo":
 			response, err = TFOlookup(request, serverAddr)
 		default:

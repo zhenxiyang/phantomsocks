@@ -395,17 +395,17 @@ func LoadConfig(filename string) error {
 						var RecordA DomainIP
 						var RecordAAAA DomainIP
 						if strings.HasPrefix(keys[1], "[") {
-							var ok bool
-							result, ok := ACache.Load(keys[1][1 : len(keys[1])-1])
-							if ok {
+							result, hasACache := ACache.Load(keys[1][1 : len(keys[1])-1])
+							if hasACache {
 								RecordA = result.(DomainIP)
-							} else {
-								result, ok = AAAACache.Load(keys[1][1 : len(keys[1])-1])
-								if ok {
-									RecordAAAA = result.(DomainIP)
-								}
 							}
-							if !ok {
+
+							result, hasAAAACache := AAAACache.Load(keys[1][1 : len(keys[1])-1])
+							if hasAAAACache {
+								RecordAAAA = result.(DomainIP)
+							}
+
+							if !(hasACache || hasAAAACache) {
 								DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
 								return nil
 							}
@@ -416,6 +416,7 @@ func LoadConfig(filename string) error {
 								Nose = append(Nose, keys[0])
 							}
 							RecordA.Index = index
+							RecordAAAA.Index = index
 							ips := strings.Split(keys[1], ",")
 							for i := 0; i < len(ips); i++ {
 								ip := net.ParseIP(ips[i])
