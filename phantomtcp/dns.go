@@ -684,10 +684,10 @@ func ParseOptions(options string) ServerOptions {
 	return serverOpts
 }
 
-func PackRequest(name string, qtype uint16, ecs string) []byte {
+func PackRequest(name string, qtype uint16, id uint16, ecs string) []byte {
 	Request := make([]byte, 512)
 
-	binary.BigEndian.PutUint16(Request[:], 0)       //ID
+	binary.BigEndian.PutUint16(Request[:], id)      //ID
 	binary.BigEndian.PutUint16(Request[2:], 0x0100) //Flag
 	binary.BigEndian.PutUint16(Request[4:], 1)      //QDCount
 	binary.BigEndian.PutUint16(Request[6:], 0)      //ANCount
@@ -834,19 +834,19 @@ func NSLookup(name string, option uint32, server string) (int, []net.IP) {
 	if u.Host != "" {
 		switch u.Scheme {
 		case "udp":
-			request = PackRequest(name, qtype, options.ECS)
+			request = PackRequest(name, qtype, uint16(0), options.ECS)
 			response, err = UDPlookup(request, u.Host)
 		case "tcp":
-			request = PackRequest(name, qtype, options.ECS)
+			request = PackRequest(name, qtype, uint16(0), options.ECS)
 			response, err = TCPlookup(request, u.Host, nil)
 		case "tls":
-			request = PackRequest(name, qtype, options.ECS)
+			request = PackRequest(name, qtype, uint16(0), options.ECS)
 			response, err = TLSlookup(request, u.Host)
 		case "https":
-			request = PackRequest(name, qtype, options.ECS)
+			request = PackRequest(name, qtype, uint16(0), options.ECS)
 			response, err = HTTPSlookup(request, u, options.Host)
 		case "tfo":
-			request = PackRequest(name, qtype, options.ECS)
+			request = PackRequest(name, qtype, uint16(0), options.ECS)
 			response, err = TFOlookup(request, u.Host)
 		default:
 			NoseLock.Lock()
@@ -896,6 +896,8 @@ func NSRequest(request []byte, cache bool) []byte {
 	if qtype != 1 && qtype != 28 && qtype != 65 {
 		return BuildResponse(request, qtype, 3600, nil)
 	}
+
+	id := binary.BigEndian.Uint16(request[:2])
 
 	if cache {
 		answer, ok := LoadDNSCache(name, uint16(qtype))
@@ -980,23 +982,25 @@ func NSRequest(request []byte, cache bool) []byte {
 		if method&OPT_IPV6 != 0 {
 			_qtype = 28
 		}
-		switch u.Scheme {
-		case "udp":
-			request = PackRequest(name, _qtype, options.ECS)
-			response, err = UDPlookup(request, u.Host)
-		case "tcp":
-			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TCPlookup(request, u.Host, nil)
-		case "tls":
-			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TLSlookup(request, u.Host)
-		case "https":
-			request = PackRequest(name, _qtype, options.ECS)
-			response, err = HTTPSlookup(request, u, options.Host)
-		case "tfo":
-			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TFOlookup(request, u.Host)
-		default:
+
+		if options.ECS != "" || _qtype != uint16(qtype) {
+			request = PackRequest(name, _qtype, id, options.ECS)
+		}
+	}
+
+	switch u.Scheme {
+	case "udp":
+		response, err = UDPlookup(request, u.Host)
+	case "tcp":
+		response, err = TCPlookup(request, u.Host, nil)
+	case "tls":
+		response, err = TLSlookup(request, u.Host)
+	case "https":
+		response, err = HTTPSlookup(request, u, options.Host)
+	case "tfo":
+		response, err = TFOlookup(request, u.Host)
+	default:
+		if method != 0 {
 			NoseLock.Lock()
 			index := len(Nose)
 			Nose = append(Nose, name)
@@ -1005,31 +1009,8 @@ func NSRequest(request []byte, cache bool) []byte {
 			StoreDNSCache(name, 28, DomainIP{0, 0, nil})
 			return BuildLie(request, qtype, index)
 		}
-	} else {
-		switch u.Scheme {
-		case "udp":
-			response, err = UDPlookup(request, options.Host)
-		case "tcp":
-			response, err = TCPlookup(request, options.Host, nil)
-		case "tls":
-			response, err = TLSlookup(request, options.Host)
-		case "https":
-			response, err = HTTPSlookup(request, u, "")
-		case "tfo":
-			response, err = TFOlookup(request, options.Host)
-		default:
-			if method != 0 {
-				NoseLock.Lock()
-				index := len(Nose)
-				Nose = append(Nose, name)
-				NoseLock.Unlock()
-				StoreDNSCache(name, 1, DomainIP{index, 0, nil})
-				StoreDNSCache(name, 28, DomainIP{0, 0, nil})
-				return BuildLie(request, qtype, index)
-			}
-			logPrintln(1, "unknown protocol")
-			return nil
-		}
+		logPrintln(1, "unknown protocol")
+		return nil
 	}
 
 	if err != nil {
