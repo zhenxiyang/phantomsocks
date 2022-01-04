@@ -976,9 +976,6 @@ func NSRequest(request []byte, cache bool) []byte {
 			return BuildResponse(request, qtype, 0, nil)
 		}
 
-		if qtype == 28 {
-			return BuildResponse(request, qtype, 0, nil)
-		}
 		_qtype := uint16(qtype)
 		if method&OPT_IPV6 != 0 {
 			_qtype = 28
@@ -1011,15 +1008,15 @@ func NSRequest(request []byte, cache bool) []byte {
 	} else {
 		switch u.Scheme {
 		case "udp":
-			response, err = UDPlookup(request, serverAddr)
+			response, err = UDPlookup(request, options.Host)
 		case "tcp":
-			response, err = TCPlookup(request, serverAddr, nil)
+			response, err = TCPlookup(request, options.Host, nil)
 		case "tls":
-			response, err = TLSlookup(request, serverAddr)
+			response, err = TLSlookup(request, options.Host)
 		case "https":
 			response, err = HTTPSlookup(request, u, "")
 		case "tfo":
-			response, err = TFOlookup(request, serverAddr)
+			response, err = TFOlookup(request, options.Host)
 		default:
 			if method != 0 {
 				NoseLock.Lock()
