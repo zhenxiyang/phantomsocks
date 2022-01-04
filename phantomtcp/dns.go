@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -228,11 +229,15 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	}
 }
 
-func HTTPSlookup(request []byte, address, host string) ([]byte, error) {
+func HTTPSlookup(request []byte, address, host string, path string) ([]byte, error) {
 	serverName, _, err := net.SplitHostPort(address)
 	if err != nil {
 		serverName = address
 		address += ":443"
+	}
+
+	if path == "" {
+		path = "/dns-query"
 	}
 
 	if net.ParseIP(serverName) != nil {
@@ -251,7 +256,7 @@ func HTTPSlookup(request []byte, address, host string) ([]byte, error) {
 	}
 	defer conn.Close()
 
-	httpRequest := fmt.Sprintf("POST /dns-query HTTP/1.1\r\nHost: %s\r\nAccept: application/dns-message\r\nContent-Type: application/dns-message\r\nConnection: close\r\nContent-Length: %d\r\n\r\n", host, len(request))
+	httpRequest := fmt.Sprintf("POST %s HTTP/1.1\r\nHost: %s\r\nAccept: application/dns-message\r\nContent-Type: application/dns-message\r\nConnection: close\r\nContent-Length: %d\r\n\r\n", path, host, len(request))
 	logPrintln(5, httpRequest)
 	_, err = conn.Write([]byte(httpRequest))
 	if err != nil {
@@ -814,30 +819,37 @@ func NSLookup(name string, option uint32, server string) (int, []net.IP) {
 	var response []byte
 	var err error
 
-	_server := strings.SplitN(server, "/", 4)
-
 	var options ServerOptions
-	if len(_server) > 3 {
-		options = ParseOptions(_server[3])
+	surl, err := url.Parse(server)
+	if err != nil {
+		logPrintln(1, err)
+		return 0, nil
+	}
+	if surl.RawQuery != "" {
+		options = ParseOptions(surl.RawQuery)
 	}
 
-	if len(_server) > 2 {
-		switch _server[0] {
-		case "udp:":
+	if surl.Host != "" {
+		serverHost := surl.Host
+		if surl.User != nil {
+			serverHost = surl.User.String() + "@" + surl.Host
+		}
+		switch surl.Scheme {
+		case "udp":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = UDPlookup(request, _server[2])
-		case "tcp:":
+			response, err = UDPlookup(request, serverHost)
+		case "tcp":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = TCPlookup(request, _server[2], nil)
-		case "tls:":
+			response, err = TCPlookup(request, serverHost, nil)
+		case "tls":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = TLSlookup(request, _server[2])
-		case "https:":
+			response, err = TLSlookup(request, serverHost)
+		case "https":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = HTTPSlookup(request, _server[2], options.Host)
-		case "tfo:":
+			response, err = HTTPSlookup(request, serverHost, options.Host, surl.Path)
+		case "tfo":
 			request = PackRequest(name, qtype, options.ECS)
-			response, err = TFOlookup(request, _server[2])
+			response, err = TFOlookup(request, serverHost)
 		default:
 			NoseLock.Lock()
 			index := len(Nose)
@@ -940,19 +952,24 @@ func NSRequest(request []byte, cache bool) []byte {
 	conf, ok := ConfigLookup(name)
 	var options ServerOptions
 	var method uint32
-	var serverAddr []string
+	serverAddr := ""
 	if ok {
 		method = conf.Option
 		logPrintln(2, "request:", name, conf.Server)
-		serverAddr = strings.SplitN(conf.Server, "/", 4)
+		serverAddr = conf.Server
 	} else {
 		method = 0
 		logPrintln(2, "request:", name, DNS)
-		serverAddr = strings.SplitN(DNS, "/", 4)
+		serverAddr = DNS
 	}
 
-	if len(serverAddr) > 3 {
-		options = ParseOptions(serverAddr[3])
+	surl, err := url.Parse(serverAddr)
+	if err != nil {
+		logPrintln(1, err)
+		return nil
+	}
+	if surl.RawQuery != "" {
+		options = ParseOptions(surl.RawQuery)
 	}
 
 	if options.Type == "A" && qtype == 28 {
@@ -961,7 +978,11 @@ func NSRequest(request []byte, cache bool) []byte {
 		return BuildResponse(request, qtype, 0, nil)
 	}
 
-	if len(serverAddr) > 2 {
+	if surl.Host != "" {
+		serverHost := surl.Host
+		if surl.User != nil {
+			serverHost = surl.User.String() + "@" + surl.Host
+		}
 		if qtype == 28 {
 			return BuildResponse(request, qtype, 0, nil)
 		}
@@ -969,22 +990,22 @@ func NSRequest(request []byte, cache bool) []byte {
 		if method&OPT_IPV6 != 0 {
 			_qtype = 28
 		}
-		switch serverAddr[0] {
-		case "udp:":
+		switch surl.Scheme {
+		case "udp":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = UDPlookup(request, serverAddr[2])
-		case "tcp:":
+			response, err = UDPlookup(request, serverHost)
+		case "tcp":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TCPlookup(request, serverAddr[2], nil)
-		case "tls:":
+			response, err = TCPlookup(request, serverHost, nil)
+		case "tls":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TLSlookup(request, serverAddr[2])
-		case "https:":
+			response, err = TLSlookup(request, serverHost)
+		case "https":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = HTTPSlookup(request, serverAddr[2], options.Host)
-		case "tfo:":
+			response, err = HTTPSlookup(request, serverHost, options.Host, surl.Path)
+		case "tfo":
 			request = PackRequest(name, _qtype, options.ECS)
-			response, err = TFOlookup(request, serverAddr[2])
+			response, err = TFOlookup(request, serverHost)
 		default:
 			NoseLock.Lock()
 			index := len(Nose)
@@ -995,17 +1016,17 @@ func NSRequest(request []byte, cache bool) []byte {
 			return BuildLie(request, qtype, index)
 		}
 	} else {
-		switch serverAddr[0] {
-		case "udp:":
-			response, err = UDPlookup(request, serverAddr[2])
-		case "tcp:":
-			response, err = TCPlookup(request, serverAddr[2], nil)
-		case "tls:":
-			response, err = TLSlookup(request, serverAddr[2])
-		case "https:":
-			response, err = HTTPSlookup(request, serverAddr[2], "")
-		case "tfo:":
-			response, err = TFOlookup(request, serverAddr[2])
+		switch surl.Scheme {
+		case "udp":
+			response, err = UDPlookup(request, serverAddr)
+		case "tcp":
+			response, err = TCPlookup(request, serverAddr, nil)
+		case "tls":
+			response, err = TLSlookup(request, serverAddr)
+		case "https":
+			response, err = HTTPSlookup(request, serverAddr, "", "/dns-query")
+		case "tfo":
+			response, err = TFOlookup(request, serverAddr)
 		default:
 			if method != 0 {
 				NoseLock.Lock()
