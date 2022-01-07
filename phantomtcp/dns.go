@@ -963,6 +963,10 @@ func NSRequest(request []byte, cache bool) []byte {
 		serverAddr = DNS
 	}
 
+	if serverAddr == "" {
+		return BuildResponse(request, qtype, 3600, nil)
+	}
+
 	u, err := url.Parse(serverAddr)
 	if err != nil {
 		logPrintln(1, err)

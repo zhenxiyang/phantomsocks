@@ -23,7 +23,7 @@ type Config struct {
 	Device string
 }
 
-var DomainMap map[string]Config
+var DomainMap map[string]*Config
 
 var SubdomainDepth = 2
 var LogLevel = 0
@@ -107,7 +107,7 @@ func logPrintln(level int, v ...interface{}) {
 func ConfigLookup(name string) (Config, bool) {
 	config, ok := DomainMap[name]
 	if ok {
-		return config, true
+		return *config, true
 	}
 
 	offset := 0
@@ -119,9 +119,18 @@ func ConfigLookup(name string) (Config, bool) {
 		offset += off
 		config, ok = DomainMap[name[offset:]]
 		if ok {
-			return config, true
+			return *config, true
 		}
 		offset++
+	}
+
+	return Config{0, 0, 0, 0, "", ""}, false
+}
+
+func GetConfig(name string) (Config, bool) {
+	config, ok := DomainMap[name]
+	if ok {
+		return *config, true
 	}
 
 	return Config{0, 0, 0, 0, "", ""}, false
@@ -290,7 +299,7 @@ func getMyIPv6() net.IP {
 }
 
 func Init() {
-	DomainMap = make(map[string]Config)
+	DomainMap = make(map[string]*Config)
 }
 
 func LoadConfig(filename string) error {
@@ -310,6 +319,9 @@ func LoadConfig(filename string) error {
 	device := ""
 
 	DNS = ""
+
+	var CurrentConfig *Config = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+
 	for {
 		line, _, err := br.ReadLine()
 		if err == io.EOF {
@@ -322,20 +334,26 @@ func LoadConfig(filename string) error {
 				keys := strings.SplitN(l, "=", 2)
 				if len(keys) > 1 {
 					if keys[0] == "server" {
+						logPrintln(2, string(line))
 						if DNS == "" {
 							DNS = keys[1]
 						}
 						server = keys[1]
-						logPrintln(2, string(line))
+
+						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "dns-min-ttl" {
+						logPrintln(2, string(line))
 						ttl, err := strconv.Atoi(keys[1])
 						if err != nil {
 							log.Println(string(line), err)
 							return err
 						}
 						DNSMinTTL = uint32(ttl)
-						logPrintln(2, string(line))
+
+						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "method" {
+						logPrintln(2, string(line))
+
 						option = OPT_NONE
 						methods := strings.Split(keys[1], ",")
 						for _, m := range methods {
@@ -346,38 +364,51 @@ func LoadConfig(filename string) error {
 								logPrintln(1, "unsupported method: "+m)
 							}
 						}
-						logPrintln(2, string(line))
+
+						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "ttl" {
+						logPrintln(2, string(line))
+
 						ttl, err := strconv.Atoi(keys[1])
 						if err != nil {
 							log.Println(string(line), err)
 							return err
 						}
 						minTTL = byte(ttl)
-						logPrintln(2, string(line))
+
+						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "mss" {
+						logPrintln(2, string(line))
+
 						mss, err := strconv.Atoi(keys[1])
 						if err != nil {
 							log.Println(string(line), err)
 							return err
 						}
 						syncMSS = uint16(mss)
-						logPrintln(2, string(line))
+
+						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "max-ttl" {
+						logPrintln(2, string(line))
+
 						ttl, err := strconv.Atoi(keys[1])
 						if err != nil {
 							log.Println(string(line), err)
 							return err
 						}
 						maxTTL = byte(ttl)
-						logPrintln(2, string(line))
+
+						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "device" {
+						logPrintln(2, string(line))
+
 						if keys[1] == "default" {
 							device = ""
 						} else {
 							device = keys[1]
 						}
-						logPrintln(2, string(line))
+
+						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "subdomain" {
 						SubdomainDepth, err = strconv.Atoi(keys[1])
 						if err != nil {
@@ -406,7 +437,7 @@ func LoadConfig(filename string) error {
 							}
 
 							if !(hasACache || hasAAAACache) {
-								DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+								DomainMap[keys[0]] = CurrentConfig
 								return nil
 							}
 						} else {
@@ -433,7 +464,7 @@ func LoadConfig(filename string) error {
 						}
 
 						if ip == nil {
-							DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+							DomainMap[keys[0]] = CurrentConfig
 							ACache.Store(keys[0], RecordA)
 							AAAACache.Store(keys[0], RecordAAAA)
 							if option&OPT_HTTPS != 0 {
@@ -446,7 +477,7 @@ func LoadConfig(filename string) error {
 								HTTPSCache.Store(keys[0], DomainIP{0, 0, nil})
 							}
 						} else {
-							DomainMap[ip.String()] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+							DomainMap[ip.String()] = CurrentConfig
 							ACache.Store(ip.String(), RecordA)
 							AAAACache.Store(ip.String(), RecordAAAA)
 						}
@@ -454,20 +485,15 @@ func LoadConfig(filename string) error {
 				} else {
 					addr, err := net.ResolveTCPAddr("tcp", keys[0])
 					if err != nil {
-						if server == "" && option == 0 {
-							ACache.Store(keys[0], DomainIP{0, 0, nil})
-							AAAACache.Store(keys[0], DomainIP{0, 0, nil})
-						} else {
-							DomainMap[keys[0]] = Config{option, minTTL, maxTTL, syncMSS, server, device}
-						}
+						DomainMap[keys[0]] = CurrentConfig
 					} else {
 						if strings.Index(keys[0], "/") > 0 {
 							_, ipnet, err := net.ParseCIDR(keys[0])
 							if err == nil {
-								DomainMap[ipnet.String()] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+								DomainMap[ipnet.String()] = CurrentConfig
 							}
 						} else {
-							DomainMap[addr.IP.String()] = Config{option, minTTL, maxTTL, syncMSS, server, device}
+							DomainMap[addr.IP.String()] = CurrentConfig
 						}
 					}
 				}

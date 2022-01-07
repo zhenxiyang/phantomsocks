@@ -105,7 +105,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 					config, ok = ConfigLookup(host)
 				} else {
 					host = net.IPv4(b[1], b[2], b[3], b[4]).String()
-					config, ok = DomainMap[host]
+					config, ok = GetConfig(host)
 				}
 
 			case socks.AtypIPv6:
@@ -137,7 +137,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 
 				host = net.IP(b[1 : 1+net.IPv6len]).String()
 
-				config, ok = DomainMap[host]
+				config, ok = GetConfig(host)
 			default:
 				logPrintln(2, "not supported")
 				return
