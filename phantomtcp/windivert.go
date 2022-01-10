@@ -487,14 +487,19 @@ func RedirectDNS() {
 
 		conf, ok := ConfigLookup(qname)
 		if ok {
-			index, _ := NSLookup(qname, conf.Option, conf.Server)
-
+			logPrintln(1, qname, conf)
 			var response []byte
-			if qtype == 28 {
-				response = BuildResponse(request, qtype, 0, nil)
+			if (conf.Option & OPT_MODIFY) != 0 {
+				index, _ := NSLookup(qname, conf.Option, conf.Server)
+				if qtype == 28 {
+					response = BuildResponse(request, qtype, 0, nil)
+				} else {
+					response = BuildLie(request, qtype, index)
+				}
 			} else {
-				response = BuildLie(request, qtype, index)
+				response = NSRequest(request, true)
 			}
+
 			udpsize := len(response) + 8
 
 			var packetsize int
