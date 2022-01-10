@@ -33,3 +33,19 @@ func SetKeepAlive(conn net.Conn) error {
 	}
 	return nil
 }
+
+func InstallService() {
+}
+
+func RemoveService() {
+}
+
+func StartService() {
+}
+
+func StopService() {
+}
+
+func RunAsService(start func()) bool {
+	return false
+}
