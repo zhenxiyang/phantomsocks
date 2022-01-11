@@ -59,9 +59,10 @@ Windows(windivert):
   server=udp://8.8.8.8:53
   server=tcp://8.8.8.8:53
   server=tls://8.8.8.8:853
+  server=https://cloudflare-dns.com/dns-query
   server=tfo://8.8.8.8:53 #Linux
   
-  server=udp://8.8.8.8:53/ecs=35.190.247.1
+  server=udp://8.8.8.8:53/?ecs=35.190.247.1
   server=http://hostname:port                     #http proxy server
   server=socks://hostname:port                    #socks5 proxy server
   server=ss://method:password@hostname:port       #Shadowsocks proxy server
