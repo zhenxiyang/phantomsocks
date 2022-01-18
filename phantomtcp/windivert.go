@@ -395,8 +395,6 @@ func Redirect(dst string, to_port int, forward bool) {
 	if dst == "" {
 		return
 	}
-	var filter string
-	var layer uint8
 
 	var dstfilter string
 	iprange := strings.SplitN(dst, "-", 2)
@@ -407,26 +405,55 @@ func Redirect(dst string, to_port int, forward bool) {
 		dstfilter = fmt.Sprintf("ip.DstAddr=%s and tcp", dst)
 	}
 
-	if forward {
-		filter = fmt.Sprintf("(%s) or (ip.SrcAddr>127.255.0.0 and ip.SrcAddr<127.255.255.255 and tcp.SrcPort=%s)", dstfilter, strconv.Itoa(to_port))
-		layer = 1
-	} else {
-		filter = fmt.Sprintf("(outbound and %s) or (ip.SrcAddr>127.255.0.0 and ip.SrcAddr<127.255.255.255 and tcp.SrcPort=%s)", dstfilter, strconv.Itoa(to_port))
-		layer = 0
-	}
+	filter := fmt.Sprintf("(outbound and %s) or (ip.SrcAddr>127.255.0.0 and ip.SrcAddr<127.255.255.255 and tcp.SrcPort=%s)", dstfilter, strconv.Itoa(to_port))
 
 	winDivertLock.Lock()
-	winDivert, err := godivert.WinDivertOpen(filter, layer, 0, 0)
+	winDivertLocal, err := godivert.WinDivertOpen(filter, 0, 0, 0)
 	winDivertLock.Unlock()
 	if err != nil {
 		fmt.Printf("winDivert open failed: %v with %s", err, filter)
 		return
 	}
-	defer winDivert.Close()
+	defer winDivertLocal.Close()
+
+	var winDivertForward *godivert.WinDivertHandle
+	if forward {
+		winDivertLock.Lock()
+		forwardfilter := fmt.Sprintf("(%s) and (ip.SrcAddr>192.168.137.0 and ip.SrcAddr<192.168.137.255)", dstfilter)
+		winDivertForward, err = godivert.WinDivertOpen(forwardfilter, 1, 0, 0)
+		winDivertLock.Unlock()
+		if err != nil {
+			fmt.Printf("winDivert open failed: %v with %s", err, forwardfilter)
+			return
+		}
+
+		go func() {
+			defer winDivertForward.Close()
+
+			for {
+				packet, err := winDivertForward.Recv()
+				if err != nil {
+					logPrintln(1, err)
+					continue
+				}
+
+				srcIP := packet.SrcIP().To4()
+				dstIP := packet.DstIP().To4()
+				dstPort, _ := packet.DstPort()
+
+				packet.SetSrcIP(net.IPv4(127, srcIP[3], byte(dstPort>>8), byte(dstPort&0xFF)))
+				packet.SetDstIP(net.IPv4(127, 255, dstIP[2], dstIP[3]))
+				packet.SetDstPort(uint16(to_port))
+
+				packet.CalcNewChecksum(winDivertLocal)
+				winDivertLocal.Send(packet)
+			}
+		}()
+	}
 
 	var localIP net.IP
 	for {
-		packet, err := winDivert.Recv()
+		packet, err := winDivertLocal.Recv()
 		if err != nil {
 			logPrintln(1, err)
 			continue
@@ -434,12 +461,18 @@ func Redirect(dst string, to_port int, forward bool) {
 
 		srcIP := packet.SrcIP().To4()
 		dstIP := packet.DstIP().To4()
-
 		dstPort, _ := packet.DstPort()
-		if srcIP[0] == 127 && srcIP[1] == 255 && dstIP[0] == 127 && dstIP[1] == 0 {
-			packet.SetSrcIP(net.IPv4(6, 0, srcIP[2], srcIP[3]))
-			packet.SetDstIP(localIP)
-			packet.SetSrcPort(uint16(dstIP[2])<<8 | uint16(dstIP[3]))
+
+		if srcIP[0] == 127 && dstIP[0] == 127 {
+			if dstIP[1] > 1 {
+				packet.SetSrcIP(net.IPv4(6, 0, srcIP[2], srcIP[3]))
+				packet.SetDstIP(net.IPv4(192, 168, 137, dstIP[1]))
+				packet.SetSrcPort(uint16(dstIP[2])<<8 | uint16(dstIP[3]))
+			} else if forward {
+				packet.SetSrcIP(net.IPv4(6, 0, srcIP[2], srcIP[3]))
+				packet.SetDstIP(localIP)
+				packet.SetSrcPort(uint16(dstIP[2])<<8 | uint16(dstIP[3]))
+			}
 		} else {
 			localIP = srcIP.To16()
 			packet.SetSrcIP(net.IPv4(127, 0, byte(dstPort>>8), byte(dstPort&0xFF)))
@@ -447,8 +480,8 @@ func Redirect(dst string, to_port int, forward bool) {
 			packet.SetDstPort(uint16(to_port))
 		}
 
-		packet.CalcNewChecksum(winDivert)
-		winDivert.Send(packet)
+		packet.CalcNewChecksum(winDivertLocal)
+		winDivertLocal.Send(packet)
 	}
 }
 
