@@ -1,5 +1,5 @@
 # phantomsocks
-A proxy server for Linux/Windows/macOS with Pcap/RawSocket/WinDivert to modify packets
+A cross-platform proxy client/server for Linux/Windows/macOS with Pcap/RawSocket/WinDivert
 ## Usage
 ```
 phantomsocks
@@ -48,41 +48,23 @@ Windows(windivert):
 ## Configure
 ```
   server=*          #domains below will use this DNS or proxy server
-  ttl=*             #the fake tcp packet will use this TTL
   domain=ip,ip,...  #this domain will use these IPs
   domain            #this domain will be resolved by DNS
-  ip:port           #this ip:port will send fake packet when creating connection
-  method=*          #the methods to modify TCP
 ```
-### server:
+### Use DNS
 ```
   server=udp://8.8.8.8:53
   server=tcp://8.8.8.8:53
   server=tls://8.8.8.8:853
   server=https://cloudflare-dns.com/dns-query
   server=tfo://8.8.8.8:53 #Linux
-  
   server=udp://8.8.8.8:53/?ecs=35.190.247.1
+```
+### Use Proxy
+```
   server=http://hostname:port                     #http proxy server
   server=socks://hostname:port                    #socks5 proxy server
-  server=ss://method:password@hostname:port       #Shadowsocks proxy server
-```
-### methods:
-```
-  none              #no modification
-  ttl               #the fake tcp packets will use the TTL you set
-  w-md5             #the fake tcp packets will have a wrong md5 option
-  w-csum            #the fake tcp packets will have a wrong checksum
-  w-ack             #the fake tcp packets will have a wrong ACK number
-  w-seq             #the fake tcp packets will have a wrong SEQ number
-  w-time            #the fake tcp packets will have a wrong timestamp
-  s-seg             #the first tcp payload will be very small
-  tfo               #SYN packet will take a part of data when the server supports TCP Fast Open
-  https             #domains below will be move to https when using http on port 80
-  df                #the true tcp packets will not be fragmented
-  ipv4              #domains below will only connect via ipv4
-  ipv6              #domains below will only connect via ipv6
-  proxy             #domains below will connect via above proxy server
+  server=ss://method:password@hostname:port       #shadowsocks proxy server
 ```
 ## Installation
 go get github.com/macronut/phantomsocks
