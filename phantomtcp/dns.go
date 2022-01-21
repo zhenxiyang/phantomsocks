@@ -28,19 +28,19 @@ var HTTPSCache sync.Map
 var Nose []string = []string{"phantom.socks"}
 var NoseLock sync.Mutex
 
-func TCPlookup(request []byte, address string, conf *Config) ([]byte, error) {
+func TCPlookup(request []byte, address string, server *PhantomServer) ([]byte, error) {
 	data := make([]byte, 1024)
 	binary.BigEndian.PutUint16(data[:2], uint16(len(request)))
 	copy(data[2:], request)
 
 	var conn net.Conn
 	var err error = nil
-	if conf != nil {
+	if server != nil {
 		addr, err := net.ResolveTCPAddr("tcp", address)
 		if err != nil {
 			return nil, err
 		}
-		conn, err = Dial([]net.IP{addr.IP}, addr.Port, data[:len(request)+2], conf)
+		conn, err = Dial([]net.IP{addr.IP}, addr.Port, data[:len(request)+2], server)
 	} else {
 		conn, err = net.DialTimeout("tcp", address, time.Second*5)
 		if err != nil {
@@ -321,7 +321,7 @@ func TFOlookup(request []byte, address string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, _, err = DialConnInfo(nil, addr, &Config{OPT_TFO, 2, 0, 0, "", ""}, data[:len(request)+2])
+	conn, _, err = DialConnInfo(nil, addr, &PhantomServer{OPT_TFO, 2, 0, 0, "", ""}, data[:len(request)+2])
 	if err != nil {
 		return nil, err
 	}

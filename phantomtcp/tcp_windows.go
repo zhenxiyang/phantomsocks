@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.Conn, *ConnectionInfo, error) {
+func DialConnInfo(laddr, raddr *net.TCPAddr, server *PhantomServer, payload []byte) (net.Conn, *ConnectionInfo, error) {
 	var conn net.Conn
 	var err error
 
@@ -23,19 +23,19 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 		}()
 	}
 
-	AddConn(addr, conf.Option)
+	AddConn(addr, server.Option)
 
-	if (conf.Option & (OPT_MSS | OPT_TFO | OPT_HTFO | OPT_KEEPALIVE)) != 0 {
+	if (server.Option & (OPT_MSS | OPT_TFO | OPT_HTFO | OPT_KEEPALIVE)) != 0 {
 		d := net.Dialer{Timeout: timeout, LocalAddr: laddr,
 			Control: func(network, address string, c syscall.RawConn) error {
 				err := c.Control(func(fd uintptr) {
 					f := syscall.Handle(fd)
-					if (conf.Option & OPT_MSS) != 0 {
+					if (server.Option & OPT_MSS) != 0 {
 					}
-					if (conf.Option & (OPT_TFO | OPT_HTFO)) != 0 {
+					if (server.Option & (OPT_TFO | OPT_HTFO)) != 0 {
 						syscall.SetsockoptInt(f, syscall.IPPROTO_IP, syscall.IP_TTL, tfo_id|64)
 					}
-					if (conf.Option & OPT_KEEPALIVE) != 0 {
+					if (server.Option & OPT_KEEPALIVE) != 0 {
 						syscall.SetsockoptInt(f, syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1)
 					}
 				})
@@ -73,7 +73,7 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 
 	DelConn(raddr.String())
 
-	if (payload != nil) || (conf.MAXTTL != 0) {
+	if (payload != nil) || (server.MAXTTL != 0) {
 		if connInfo == nil {
 			conn.Close()
 			return nil, nil, nil
@@ -89,8 +89,8 @@ func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.
 			conn.Close()
 			return nil, nil, err
 		}
-		if conf.MAXTTL != 0 {
-			err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, int(conf.MAXTTL))
+		if server.MAXTTL != 0 {
+			err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, int(server.MAXTTL))
 		} else {
 			err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, 64)
 		}

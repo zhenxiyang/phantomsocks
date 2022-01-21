@@ -464,14 +464,12 @@ func Redirect(dst string, to_port int, forward bool) {
 		dstPort, _ := packet.DstPort()
 
 		if srcIP[0] == 127 && dstIP[0] == 127 {
+			packet.SetSrcIP(net.IPv4(6, 0, srcIP[2], srcIP[3]))
+			packet.SetSrcPort(uint16(dstIP[2])<<8 | uint16(dstIP[3]))
 			if dstIP[1] > 1 {
-				packet.SetSrcIP(net.IPv4(6, 0, srcIP[2], srcIP[3]))
 				packet.SetDstIP(net.IPv4(192, 168, 137, dstIP[1]))
-				packet.SetSrcPort(uint16(dstIP[2])<<8 | uint16(dstIP[3]))
 			} else if forward {
-				packet.SetSrcIP(net.IPv4(6, 0, srcIP[2], srcIP[3]))
 				packet.SetDstIP(localIP)
-				packet.SetSrcPort(uint16(dstIP[2])<<8 | uint16(dstIP[3]))
 			}
 		} else {
 			localIP = srcIP.To16()

@@ -50,7 +50,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 			var host string
 			var port int
 
-			var config Config
+			var server PhantomServer
 			var ok = false
 
 			switch b[0] {
@@ -68,7 +68,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 				host = string(b[2 : 2+b[1]])
 				port = int(binary.BigEndian.Uint16(b[2+b[1] : 2+b[1]+2]))
 
-				config, ok = ConfigLookup(host)
+				server, ok = ConfigLookup(host)
 			case socks.AtypIPv4:
 				_, err = io.ReadFull(c, b[1:1+net.IPv4len+2])
 				if err != nil {
@@ -102,10 +102,10 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 						return
 					}
 					host = Nose[index]
-					config, ok = ConfigLookup(host)
+					server, ok = ConfigLookup(host)
 				} else {
 					host = net.IPv4(b[1], b[2], b[3], b[4]).String()
-					config, ok = GetConfig(host)
+					server, ok = GetConfig(host)
 				}
 
 			case socks.AtypIPv6:
@@ -137,7 +137,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 
 				host = net.IP(b[1 : 1+net.IPv6len]).String()
 
-				config, ok = GetConfig(host)
+				server, ok = GetConfig(host)
 			default:
 				logPrintln(2, "not supported")
 				return
@@ -145,14 +145,14 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 
 			var rc net.Conn
 			if ok {
-				if config.Option&OPT_PROXY == 0 {
-					_, ips := NSLookup(host, config.Option, config.Server)
+				if server.Option&OPT_PROXY == 0 {
+					_, ips := NSLookup(host, server.Option, server.Server)
 					if len(ips) == 0 {
 						logPrintln(1, host, "no such host")
 						return
 					}
 
-					if config.Option == 0 {
+					if server.Option == 0 {
 						rc, err = Dial(ips, port, nil, nil)
 						if err != nil {
 							logPrintln(1, err)
@@ -168,29 +168,29 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 
 						if b[0] == 0x16 {
 							offset, length := GetSNI(b[:n])
-							var conf *Config = nil
+							var s *PhantomServer = nil
 							if length > 0 {
 								host = string(b[offset : offset+length])
-								config, ok = ConfigLookup(host)
-								conf = &config
+								server, ok = ConfigLookup(host)
+								s = &server
 							}
 
-							logPrintln(1, "Shadowsocks:", c.RemoteAddr(), "->", host, port, config)
+							logPrintln(1, "Shadowsocks:", c.RemoteAddr(), "->", host, port, server)
 
-							rc, err = Dial(ips, port, b[:n], conf)
+							rc, err = Dial(ips, port, b[:n], s)
 							if err != nil {
 								logPrintln(1, host, err)
 								return
 							}
 						} else {
-							logPrintln(1, "Shadowsocks:", c.RemoteAddr(), "->", host, port, config)
-							if config.Option&OPT_HTTPS != 0 {
+							logPrintln(1, "Shadowsocks:", c.RemoteAddr(), "->", host, port, server)
+							if server.Option&OPT_HTTPS != 0 {
 								HttpMove(c, "https", b[:n])
 								return
-							} else if config.Option&OPT_MOVE != 0 {
-								HttpMove(c, config.Server, b[:n])
+							} else if server.Option&OPT_MOVE != 0 {
+								HttpMove(c, server.Server, b[:n])
 								return
-							} else if config.Option&OPT_STRIP != 0 {
+							} else if server.Option&OPT_STRIP != 0 {
 								ip := ips[rand.Intn(len(ips))]
 								rc, err = DialStrip(ip.String(), "")
 								if err != nil {
@@ -199,7 +199,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 								}
 								_, err = rc.Write(b[:n])
 							} else {
-								rc, err = HTTP(c, ips, port, b[:n], &config)
+								rc, err = HTTP(c, ips, port, b[:n], &server)
 								if err != nil {
 									logPrintln(1, err)
 									return
@@ -210,20 +210,20 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 						}
 					}
 				} else {
-					logPrintln(1, "Shadowsocks:", c.RemoteAddr(), "<->", host, port, config)
+					logPrintln(1, "Shadowsocks:", c.RemoteAddr(), "<->", host, port, server)
 
-					if (config.Option & OPT_MODIFY) != 0 {
+					if (server.Option & OPT_MODIFY) != 0 {
 						var b [1500]byte
 						n, err := c.Read(b[:])
 						if err != nil {
 							logPrintln(1, err)
 							return
 						}
-						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, b[:n], &config)
-					} else if config.Device != "" {
-						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, &config)
+						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), server.Server, b[:n], &server)
+					} else if server.Device != "" {
+						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), server.Server, nil, &server)
 					} else {
-						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, nil)
+						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), server.Server, nil, nil)
 					}
 
 					if err != nil {

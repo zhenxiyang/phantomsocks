@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-type Config struct {
+type PhantomServer struct {
 	Option uint32
 	TTL    byte
 	MAXTTL byte
@@ -23,7 +23,7 @@ type Config struct {
 	Device string
 }
 
-var DomainMap map[string]*Config
+var DomainMap map[string]*PhantomServer
 
 var SubdomainDepth = 2
 var LogLevel = 0
@@ -104,7 +104,7 @@ func logPrintln(level int, v ...interface{}) {
 	}
 }
 
-func ConfigLookup(name string) (Config, bool) {
+func ConfigLookup(name string) (PhantomServer, bool) {
 	config, ok := DomainMap[name]
 	if ok {
 		return *config, true
@@ -124,16 +124,16 @@ func ConfigLookup(name string) (Config, bool) {
 		offset++
 	}
 
-	return Config{0, 0, 0, 0, "", ""}, false
+	return PhantomServer{0, 0, 0, 0, "", ""}, false
 }
 
-func GetConfig(name string) (Config, bool) {
+func GetConfig(name string) (PhantomServer, bool) {
 	config, ok := DomainMap[name]
 	if ok {
 		return *config, true
 	}
 
-	return Config{0, 0, 0, 0, "", ""}, false
+	return PhantomServer{0, 0, 0, 0, "", ""}, false
 }
 
 func GetHost(b []byte) (offset int, length int) {
@@ -299,7 +299,7 @@ func getMyIPv6() net.IP {
 }
 
 func Init() {
-	DomainMap = make(map[string]*Config)
+	DomainMap = make(map[string]*PhantomServer)
 }
 
 func LoadConfig(filename string) error {
@@ -320,7 +320,7 @@ func LoadConfig(filename string) error {
 
 	DNS = ""
 
-	var CurrentConfig *Config = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+	var CurrentServer *PhantomServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 
 	for {
 		line, _, err := br.ReadLine()
@@ -340,7 +340,7 @@ func LoadConfig(filename string) error {
 						}
 						server = keys[1]
 
-						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "dns-min-ttl" {
 						logPrintln(2, string(line))
 						ttl, err := strconv.Atoi(keys[1])
@@ -350,7 +350,7 @@ func LoadConfig(filename string) error {
 						}
 						DNSMinTTL = uint32(ttl)
 
-						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "method" {
 						logPrintln(2, string(line))
 
@@ -365,7 +365,7 @@ func LoadConfig(filename string) error {
 							}
 						}
 
-						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "ttl" {
 						logPrintln(2, string(line))
 
@@ -376,7 +376,7 @@ func LoadConfig(filename string) error {
 						}
 						minTTL = byte(ttl)
 
-						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "mss" {
 						logPrintln(2, string(line))
 
@@ -387,7 +387,7 @@ func LoadConfig(filename string) error {
 						}
 						syncMSS = uint16(mss)
 
-						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "max-ttl" {
 						logPrintln(2, string(line))
 
@@ -398,7 +398,7 @@ func LoadConfig(filename string) error {
 						}
 						maxTTL = byte(ttl)
 
-						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "device" {
 						logPrintln(2, string(line))
 
@@ -408,7 +408,7 @@ func LoadConfig(filename string) error {
 							device = keys[1]
 						}
 
-						CurrentConfig = &Config{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 					} else if keys[0] == "subdomain" {
 						SubdomainDepth, err = strconv.Atoi(keys[1])
 						if err != nil {
@@ -437,7 +437,7 @@ func LoadConfig(filename string) error {
 							}
 
 							if !(hasACache || hasAAAACache) {
-								DomainMap[keys[0]] = CurrentConfig
+								DomainMap[keys[0]] = CurrentServer
 								return nil
 							}
 						} else {
@@ -464,7 +464,7 @@ func LoadConfig(filename string) error {
 						}
 
 						if ip == nil {
-							DomainMap[keys[0]] = CurrentConfig
+							DomainMap[keys[0]] = CurrentServer
 							ACache.Store(keys[0], RecordA)
 							AAAACache.Store(keys[0], RecordAAAA)
 							if option&OPT_HTTPS != 0 {
@@ -477,7 +477,7 @@ func LoadConfig(filename string) error {
 								HTTPSCache.Store(keys[0], DomainIP{0, 0, nil})
 							}
 						} else {
-							DomainMap[ip.String()] = CurrentConfig
+							DomainMap[ip.String()] = CurrentServer
 							ACache.Store(ip.String(), RecordA)
 							AAAACache.Store(ip.String(), RecordAAAA)
 						}
@@ -485,15 +485,15 @@ func LoadConfig(filename string) error {
 				} else {
 					addr, err := net.ResolveTCPAddr("tcp", keys[0])
 					if err != nil {
-						DomainMap[keys[0]] = CurrentConfig
+						DomainMap[keys[0]] = CurrentServer
 					} else {
 						if strings.Index(keys[0], "/") > 0 {
 							_, ipnet, err := net.ParseCIDR(keys[0])
 							if err == nil {
-								DomainMap[ipnet.String()] = CurrentConfig
+								DomainMap[ipnet.String()] = CurrentServer
 							}
 						} else {
-							DomainMap[addr.IP.String()] = CurrentConfig
+							DomainMap[addr.IP.String()] = CurrentServer
 						}
 					}
 				}
