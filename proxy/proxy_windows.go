@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/chai2010/winsvc"
+	"golang.org/x/sys/windows/registry"
 
 	ptcp "github.com/macronut/phantomsocks/phantomtcp"
 )
@@ -38,6 +39,20 @@ func SetProxy(dev, address string, state bool) error {
 			if err != nil {
 				return err
 			}
+		case "socks":
+			key, _, _ := registry.CreateKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings`, registry.ALL_ACCESS)
+			key.SetStringValue(`ProxyServer`, "socks="+proxyAddr[1])
+			key.SetDWordValue(`ProxyEnable`, uint32(1))
+			defer key.Close()
+		default:
+			return nil
+		}
+	} else {
+		switch proxyAddr[0] {
+		case "socks":
+			key, _, _ := registry.CreateKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings`, registry.ALL_ACCESS)
+			key.SetDWordValue(`ProxyEnable`, uint32(0))
+			defer key.Close()
 		default:
 			return nil
 		}

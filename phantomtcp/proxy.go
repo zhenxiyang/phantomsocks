@@ -1,6 +1,7 @@
 package phantomtcp
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 	"log"
@@ -26,7 +27,7 @@ func SocksProxy(client net.Conn) {
 		var b [1500]byte
 		n, err := client.Read(b[:])
 		if err != nil || n < 3 {
-			log.Println(client.RemoteAddr(), err)
+			logPrintln(1, client.RemoteAddr(), err)
 			return
 		}
 
@@ -61,9 +62,28 @@ func SocksProxy(client net.Conn) {
 				logPrintln(1, "not supported")
 				return
 			}
-			reply = []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+			reply = []byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0}
 		} else if b[0] == 0x04 {
-			n, err = client.Read(b[:9])
+			userEnd := bytes.IndexByte(b[:n], 0)
+			if userEnd >= 8 && b[1] == 1 {
+				port = int(binary.BigEndian.Uint16(b[2:4]))
+				if n > userEnd && b[4]|b[5]|b[6] == 0 {
+					hostEnd := bytes.IndexByte(b[userEnd+1:n], 0)
+					if hostEnd > 0 {
+						host = string(b[userEnd+1 : userEnd+1+hostEnd])
+					} else {
+						client.Write([]byte{0, 91, 0, 0, 0, 0, 0, 0})
+						return
+					}
+				} else {
+					ip = net.IP(b[4:8])
+				}
+
+				reply = []byte{0, 90, b[2], b[3], b[4], b[5], b[6], b[7]}
+			} else {
+				client.Write([]byte{0, 91, 0, 0, 0, 0, 0, 0})
+				return
+			}
 		} else {
 			return
 		}
@@ -161,9 +181,9 @@ func SocksProxy(client net.Conn) {
 							return
 						}
 
-						conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), server.Server, b[:n], &server)
+						conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), b[:n])
 					} else {
-						conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), server.Server, nil, nil)
+						conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
 						if err != nil {
 							logPrintln(1, host, err)
 							return
@@ -418,20 +438,20 @@ func RedirectProxy(client net.Conn) {
 		}
 		port = addr.Port
 
-		config, ok := ConfigLookup(host)
+		server, ok := ConfigLookup(host)
 
 		if ok {
-			if config.Option&OPT_PROXY == 0 {
+			if server.Option&OPT_PROXY == 0 {
 				if ips == nil {
-					_, ips = NSLookup(host, config.Option, config.Server)
+					_, ips = NSLookup(host, server.Option, server.Server)
 					if len(ips) == 0 {
 						logPrintln(1, host, "no such host")
 						return
 					}
 				}
 
-				if config.Option == 0 {
-					conn, err = Dial(ips, port, nil, &config)
+				if server.Option == 0 {
+					conn, err = Dial(ips, port, nil, &server)
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -449,11 +469,11 @@ func RedirectProxy(client net.Conn) {
 						var conf *PhantomServer = nil
 						if length > 0 {
 							host = string(b[offset : offset+length])
-							config, ok = ConfigLookup(host)
-							conf = &config
+							server, ok = ConfigLookup(host)
+							conf = &server
 						}
 
-						logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
+						logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
 
 						conn, err = Dial(ips, port, b[:n], conf)
 						if err != nil {
@@ -461,14 +481,14 @@ func RedirectProxy(client net.Conn) {
 							return
 						}
 					} else {
-						logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, config)
-						if config.Option&OPT_HTTPS != 0 {
+						logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
+						if server.Option&OPT_HTTPS != 0 {
 							HttpMove(client, "https", b[:n])
 							return
-						} else if config.Option&OPT_MOVE != 0 {
-							HttpMove(client, config.Server, b[:n])
+						} else if server.Option&OPT_MOVE != 0 {
+							HttpMove(client, server.Server, b[:n])
 							return
-						} else if config.Option&OPT_STRIP != 0 {
+						} else if server.Option&OPT_STRIP != 0 {
 							ip := ips[rand.Intn(len(ips))]
 							conn, err = DialStrip(ip.String(), "")
 							if err != nil {
@@ -477,7 +497,7 @@ func RedirectProxy(client net.Conn) {
 							}
 							_, err = conn.Write(b[:n])
 						} else {
-							conn, err = HTTP(client, ips, port, b[:n], &config)
+							conn, err = HTTP(client, ips, port, b[:n], &server)
 							if err != nil {
 								logPrintln(1, err)
 								return
@@ -488,10 +508,10 @@ func RedirectProxy(client net.Conn) {
 					}
 				}
 			} else {
-				logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, config)
+				logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, server)
 
-				if config.Option == OPT_PROXY {
-					conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, nil, nil)
+				if server.Option == OPT_PROXY {
+					conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
 				} else {
 					var b [1500]byte
 					n, err := client.Read(b[:])
@@ -500,7 +520,7 @@ func RedirectProxy(client net.Conn) {
 						return
 					}
 
-					conn, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), config.Server, b[:n], &config)
+					conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), b[:n])
 				}
 
 				if err != nil {

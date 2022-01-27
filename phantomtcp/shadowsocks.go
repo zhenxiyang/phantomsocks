@@ -219,11 +219,11 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 							logPrintln(1, err)
 							return
 						}
-						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), server.Server, b[:n], &server)
+						rc, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), b[:n])
 					} else if server.Device != "" {
-						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), server.Server, nil, &server)
+						rc, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
 					} else {
-						rc, err = DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), server.Server, nil, nil)
+						rc, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
 					}
 
 					if err != nil {

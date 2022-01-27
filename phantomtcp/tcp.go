@@ -489,11 +489,11 @@ func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, server *Phant
 	return conn, err
 }
 
-func DialProxy(address string, proxy string, header []byte, server *PhantomServer) (net.Conn, error) {
+func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn, error) {
 	var err error
 	var conn net.Conn
 
-	u, err := url.Parse(proxy)
+	u, err := url.Parse(server.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +515,7 @@ func DialProxy(address string, proxy string, header []byte, server *PhantomServe
 		}
 	}
 
-	if server != nil {
+	if server.Option&OPT_MODIFY != 0 {
 		if header != nil {
 			if server.Option&OPT_HTTP != 0 {
 				var request_host string = ""
