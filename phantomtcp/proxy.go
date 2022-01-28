@@ -76,7 +76,15 @@ func SocksProxy(client net.Conn) {
 						return
 					}
 				} else {
-					ip = net.IP(b[4:8])
+					if b[0] == 6 {
+						index := int(binary.BigEndian.Uint32(b[6:8]))
+						if index >= len(Nose) {
+							return
+						}
+						host = Nose[index]
+					} else {
+						ip = net.IP(b[4:8])
+					}
 				}
 
 				reply = []byte{0, 90, b[2], b[3], b[4], b[5], b[6], b[7]}

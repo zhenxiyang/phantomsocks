@@ -3,6 +3,7 @@ package proxy
 import (
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,18 +16,18 @@ import (
 )
 
 func SetProxy(dev, address string, state bool) error {
-	proxyAddr := strings.Split(address, "://")
-	if len(proxyAddr) < 2 {
-		return nil
+	u, err := url.Parse(address)
+	if err != nil {
+		return err
 	}
 
-	proxyTCPAddr, err := net.ResolveTCPAddr("tcp", proxyAddr[1])
+	proxyTCPAddr, err := net.ResolveTCPAddr("tcp", u.Host)
 	if err != nil {
 		return err
 	}
 
 	if state {
-		switch proxyAddr[0] {
+		switch u.Scheme {
 		case "redirect":
 			if state {
 				go ptcp.Redirect("6.0.0.1-6.0.255.254", proxyTCPAddr.Port, true)
@@ -41,18 +42,50 @@ func SetProxy(dev, address string, state bool) error {
 			}
 		case "socks":
 			key, _, _ := registry.CreateKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings`, registry.ALL_ACCESS)
-			key.SetStringValue(`ProxyServer`, "socks="+proxyAddr[1])
+			key.SetStringValue(`ProxyServer`, "socks="+u.Host)
 			key.SetDWordValue(`ProxyEnable`, uint32(1))
 			defer key.Close()
+
+			q := u.Query()
+			dns, ok := q["dns"]
+			if ok {
+				for _, dnsname := range dns {
+					dnsconf := strings.SplitN(dnsname, "@", 2)
+					if len(dnsconf) == 2 {
+						arg := []string{"interface", "ip", "set", "dnsservers", dnsconf[1], "static", dnsconf[0], "primary"}
+						cmd := exec.Command("netsh", arg...)
+						_, err := cmd.CombinedOutput()
+						if err != nil {
+							return err
+						}
+					}
+				}
+			}
 		default:
 			return nil
 		}
 	} else {
-		switch proxyAddr[0] {
+		switch u.Scheme {
 		case "socks":
 			key, _, _ := registry.CreateKey(registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings`, registry.ALL_ACCESS)
 			key.SetDWordValue(`ProxyEnable`, uint32(0))
 			defer key.Close()
+
+			q := u.Query()
+			dns, ok := q["dns"]
+			if ok {
+				for _, dnsname := range dns {
+					dnsconf := strings.SplitN(dnsname, "@", 2)
+					if len(dnsconf) == 2 {
+						arg := []string{"interface", "ip", "set", "dnsservers", dnsconf[1], "dhcp"}
+						cmd := exec.Command("netsh", arg...)
+						_, err := cmd.CombinedOutput()
+						if err != nil {
+							return err
+						}
+					}
+				}
+			}
 		default:
 			return nil
 		}
