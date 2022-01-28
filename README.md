@@ -78,7 +78,7 @@ go build
 static linking for pcap
 ```
 sudo apt-get install -y libpcap-dev
-go build -ldflags '-extldflags "-static"'
+go build -tags pcap -ldflags '-extldflags "-static"'
 ```
 ### raw socket version
 raw socket is Linux only
