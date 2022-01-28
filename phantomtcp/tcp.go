@@ -148,7 +148,7 @@ func GetLocalAddr(name string, ipv6 bool) (*net.TCPAddr, error) {
 	return nil, nil
 }
 
-func Dial(addresses []net.IP, port int, b []byte, server *PhantomServer) (net.Conn, error) {
+func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.Conn, error) {
 	var err error
 	var conn net.Conn
 
@@ -156,7 +156,7 @@ func Dial(addresses []net.IP, port int, b []byte, server *PhantomServer) (net.Co
 	offset := 0
 	length := 0
 
-	if server != nil {
+	if server.Option != 0 {
 		device = server.Device
 		if b != nil {
 			if server.Option&OPT_MODIFY != 0 {
@@ -336,7 +336,7 @@ func Dial(addresses []net.IP, port int, b []byte, server *PhantomServer) (net.Co
 	}
 }
 
-func HTTP(client net.Conn, addresses []net.IP, port int, b []byte, server *PhantomServer) (net.Conn, error) {
+func (server *PhantomServer) HTTP(client net.Conn, addresses []net.IP, port int, b []byte) (net.Conn, error) {
 	var err error
 	var conn net.Conn
 

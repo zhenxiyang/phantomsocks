@@ -153,7 +153,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 					}
 
 					if server.Option == 0 {
-						rc, err = Dial(ips, port, nil, nil)
+						rc, err = server.Dial(ips, port, nil)
 						if err != nil {
 							logPrintln(1, err)
 							return
@@ -168,16 +168,14 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 
 						if b[0] == 0x16 {
 							offset, length := GetSNI(b[:n])
-							var s *PhantomServer = nil
 							if length > 0 {
 								host = string(b[offset : offset+length])
 								server, ok = ConfigLookup(host)
-								s = &server
 							}
 
 							logPrintln(1, "Shadowsocks:", c.RemoteAddr(), "->", host, port, server)
 
-							rc, err = Dial(ips, port, b[:n], s)
+							rc, err = server.Dial(ips, port, b[:n])
 							if err != nil {
 								logPrintln(1, host, err)
 								return
@@ -199,7 +197,7 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 								}
 								_, err = rc.Write(b[:n])
 							} else {
-								rc, err = HTTP(c, ips, port, b[:n], &server)
+								rc, err = server.HTTP(c, ips, port, b[:n])
 								if err != nil {
 									logPrintln(1, err)
 									return
@@ -220,8 +218,6 @@ func ShadowsocksTCPRemote(addr string, shadow func(net.Conn) net.Conn) {
 							return
 						}
 						rc, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), b[:n])
-					} else if server.Device != "" {
-						rc, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
 					} else {
 						rc, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
 					}

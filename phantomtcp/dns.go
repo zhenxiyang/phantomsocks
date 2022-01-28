@@ -40,7 +40,7 @@ func TCPlookup(request []byte, address string, server *PhantomServer) ([]byte, e
 		if err != nil {
 			return nil, err
 		}
-		conn, err = Dial([]net.IP{addr.IP}, addr.Port, data[:len(request)+2], server)
+		conn, err = server.Dial([]net.IP{addr.IP}, addr.Port, data[:len(request)+2])
 	} else {
 		conn, err = net.DialTimeout("tcp", address, time.Second*5)
 		if err != nil {

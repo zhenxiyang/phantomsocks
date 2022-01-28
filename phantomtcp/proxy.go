@@ -114,7 +114,7 @@ func SocksProxy(client net.Conn) {
 					}
 
 					if server.Option == 0 {
-						conn, err = Dial(ips, port, nil, nil)
+						conn, err = server.Dial(ips, port, nil)
 						if err != nil {
 							logPrintln(1, err)
 							return
@@ -156,7 +156,7 @@ func SocksProxy(client net.Conn) {
 								}
 								_, err = conn.Write(b[:n])
 							} else {
-								conn, err = HTTP(client, ips, port, b[:n], &server)
+								conn, err = server.HTTP(client, ips, port, b[:n])
 								if err != nil {
 									logPrintln(1, err)
 									return
@@ -165,7 +165,7 @@ func SocksProxy(client net.Conn) {
 								return
 							}
 						} else {
-							conn, err = Dial(ips, port, b[:n], &server)
+							conn, err = server.Dial(ips, port, b[:n])
 							if err != nil {
 								logPrintln(1, host, err)
 								return
@@ -212,10 +212,10 @@ func SocksProxy(client net.Conn) {
 			}
 		} else {
 			if ip.To4() != nil {
-				conf, ok := ConfigLookup(ip.String())
+				server, ok := ConfigLookup(ip.String())
 				addr := net.TCPAddr{IP: ip, Port: port, Zone: ""}
 				if ok {
-					logPrintln(1, "Socks:", addr.IP.String(), addr.Port, conf)
+					logPrintln(1, "Socks:", addr.IP.String(), addr.Port, server)
 					client.Write(reply)
 					n, err = client.Read(b[:])
 
@@ -228,7 +228,7 @@ func SocksProxy(client net.Conn) {
 					} else {
 						addresses = []net.IP{ip}
 					}
-					conn, err = Dial(addresses, port, b[:n], &conf)
+					conn, err = server.Dial(addresses, port, b[:n])
 				} else {
 					logPrintln(1, "Socks:", addr.IP.String(), addr.Port)
 
@@ -338,31 +338,31 @@ func SNIProxy(client net.Conn) {
 			}
 		}
 
-		conf, ok := ConfigLookup(host)
+		server, ok := ConfigLookup(host)
 
 		if ok {
-			logPrintln(1, "SNI:", host, port, conf)
+			logPrintln(1, "SNI:", host, port, server)
 
-			_, ips := NSLookup(host, conf.Option, conf.Server)
+			_, ips := NSLookup(host, server.Option, server.Server)
 			if len(ips) == 0 {
 				logPrintln(1, host, "no such host")
 				return
 			}
 
 			if b[0] == 0x16 {
-				conn, err = Dial(ips, port, b[:n], &conf)
+				conn, err = server.Dial(ips, port, b[:n])
 				if err != nil {
 					logPrintln(1, host, err)
 					return
 				}
 			} else {
-				if conf.Option&OPT_HTTPS != 0 {
+				if server.Option&OPT_HTTPS != 0 {
 					HttpMove(client, "https", b[:n])
 					return
-				} else if conf.Option&OPT_MOVE != 0 {
-					HttpMove(client, conf.Server, b[:n])
+				} else if server.Option&OPT_MOVE != 0 {
+					HttpMove(client, server.Server, b[:n])
 					return
-				} else if conf.Option&OPT_STRIP != 0 {
+				} else if server.Option&OPT_STRIP != 0 {
 					ip := ips[rand.Intn(len(ips))]
 					conn, err = DialStrip(ip.String(), "")
 					if err != nil {
@@ -371,7 +371,7 @@ func SNIProxy(client net.Conn) {
 					}
 					_, err = conn.Write(b[:n])
 				} else {
-					conn, err = HTTP(client, ips, port, b[:n], &conf)
+					conn, err = server.HTTP(client, ips, port, b[:n])
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -459,7 +459,7 @@ func RedirectProxy(client net.Conn) {
 				}
 
 				if server.Option == 0 {
-					conn, err = Dial(ips, port, nil, &server)
+					conn, err = server.Dial(ips, port, nil)
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -474,16 +474,14 @@ func RedirectProxy(client net.Conn) {
 
 					if b[0] == 0x16 {
 						offset, length := GetSNI(b[:n])
-						var conf *PhantomServer = nil
 						if length > 0 {
 							host = string(b[offset : offset+length])
 							server, ok = ConfigLookup(host)
-							conf = &server
 						}
 
 						logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
 
-						conn, err = Dial(ips, port, b[:n], conf)
+						conn, err = server.Dial(ips, port, b[:n])
 						if err != nil {
 							logPrintln(1, host, err)
 							return
@@ -505,7 +503,7 @@ func RedirectProxy(client net.Conn) {
 							}
 							_, err = conn.Write(b[:n])
 						} else {
-							conn, err = HTTP(client, ips, port, b[:n], &server)
+							conn, err = server.HTTP(client, ips, port, b[:n])
 							if err != nil {
 								logPrintln(1, err)
 								return
