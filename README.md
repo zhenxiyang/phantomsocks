@@ -20,24 +20,24 @@ phantomsocks
   -socks string
     	Socks proxy
   -redir string
-      Netfilter TCP redirect
+     	Netfilter TCP redirect
   -proxy string
-      Set system proxy
+     	Set system proxy
 ```
-### Socks5:
+### Socks:
 ```
-Linux(pcap&rawsocket):
-sudo ./phantomsocks -device eth0 -socks 0.0.0.0:1080
+Linux:
+sudo ./phantomsocks -device eth0 -socks 127.0.0.1:1080
 
 Windows(windivert):
-phantomsocks -socks 0.0.0.0:1080
+phantomsocks -socks 127.0.0.1:1080 -proxy socks://127.0.0.1:1080/?dns=127.0.0.1
 
 macOS:
 ./phantomsocks -device en0 -socks 127.0.0.1:1080 -proxy socks://127.0.0.1:1080
 ```
 ### Redirect:
 ```
-Linux(pcap&rawsocket):
+Linux:
 iptables -t nat -A OUTPUT -d 6.0.0.0/8 -p tcp -j REDIRECT --to-port 6
 ./phantomsocks -device eth0 -dns :53 -redir :6
 
