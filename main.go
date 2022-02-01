@@ -163,9 +163,13 @@ func StartService() {
 		runtime.GOMAXPROCS(StartFlags.MaxProcs)
 	}
 
-	devices := strings.Split(StartFlags.Device, ",")
-	if !ptcp.ConnectionMonitor(devices) {
-		return
+	if StartFlags.Device != "" {
+		devices := strings.Split(StartFlags.Device, ",")
+		if !ptcp.ConnectionMonitor(devices) {
+			return
+		}
+	} else {
+		ptcp.ConnectionMonitor("")
 	}
 
 	if StartFlags.UDPDevice != "" {
