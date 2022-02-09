@@ -76,7 +76,7 @@ func SocksProxy(client net.Conn) {
 						return
 					}
 				} else {
-					if b[0] == 6 {
+					if b[0] == VirtualAddrPrefix {
 						index := int(binary.BigEndian.Uint32(b[6:8]))
 						if index >= len(Nose) {
 							return
@@ -422,17 +422,15 @@ func RedirectProxy(client net.Conn) {
 			return
 		}
 
-		ip := []byte(addr.IP)
-		iptype := binary.BigEndian.Uint16(ip[:2])
-		switch iptype {
-		case 0x2000:
-			index := int(binary.BigEndian.Uint32(ip[12:16]))
+		switch addr.IP[0] {
+		case 0x00:
+			index := int(binary.BigEndian.Uint32(addr.IP[12:16]))
 			if index >= len(Nose) {
 				return
 			}
 			host = Nose[index]
-		case 0x0600:
-			index := int(binary.BigEndian.Uint16(ip[2:4]))
+		case VirtualAddrPrefix:
+			index := int(binary.BigEndian.Uint16(addr.IP[2:4]))
 			if index >= len(Nose) {
 				return
 			}

@@ -110,7 +110,7 @@ func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 
 	if ip4 := LocalTCPAddr.IP.To4(); ip4 != nil {
 		if ip4[0] == 127 && ip4[1] == 255 {
-			ip4[0] = 6
+			ip4[0] = VirtualAddrPrefix
 			ip4[1] = 0
 			LocalTCPAddr.IP = ip4
 			RemoteTCPAddr := conn.RemoteAddr().(*net.TCPAddr).IP.To4()

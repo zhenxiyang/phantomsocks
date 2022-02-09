@@ -118,19 +118,20 @@ func DNSServer(listenAddr string) error {
 }
 
 var StartFlags struct {
-	ConfigFiles     string `json:"config,omitempty"`
-	HostsFile       string `json:"hosts,omitempty"`
-	SocksListenAddr string `json:"socks,omitempty"`
-	PacListenAddr   string `json:"pac,omitempty"`
-	SniListenAddr   string `json:"sni,omitempty"`
-	RedirectAddr    string `json:"redir,omitempty"`
-	SystemProxy     string `json:"proxy,omitempty"`
-	DnsListenAddr   string `json:"dns,omitempty"`
-	Device          string `json:"device,omitempty"`
-	UDPDevice       string `json:"udpdev,omitempty"`
-	Clients         string `json:"clients,omitempty"`
-	LogLevel        int    `json:"log,omitempty"`
-	MaxProcs        int    `json:"maxprocs,omitempty"`
+	ConfigFiles       string `json:"config,omitempty"`
+	HostsFile         string `json:"hosts,omitempty"`
+	SocksListenAddr   string `json:"socks,omitempty"`
+	PacListenAddr     string `json:"pac,omitempty"`
+	SniListenAddr     string `json:"sni,omitempty"`
+	RedirectAddr      string `json:"redir,omitempty"`
+	SystemProxy       string `json:"proxy,omitempty"`
+	DnsListenAddr     string `json:"dns,omitempty"`
+	Device            string `json:"device,omitempty"`
+	UDPDevice         string `json:"udpdev,omitempty"`
+	Clients           string `json:"clients,omitempty"`
+	VirtualAddrPrefix int    `json:"vaddrprefix,omitempty"`
+	LogLevel          int    `json:"log,omitempty"`
+	MaxProcs          int    `json:"maxprocs,omitempty"`
 }
 
 func StartService() {
@@ -232,6 +233,10 @@ func StartService() {
 		go DNSServer(StartFlags.DnsListenAddr)
 	}
 
+	if StartFlags.VirtualAddrPrefix != 0 {
+		ptcp.VirtualAddrPrefix = byte(StartFlags.VirtualAddrPrefix)
+	}
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill)
 	s := <-c
@@ -267,6 +272,7 @@ func main() {
 		flag.StringVar(&StartFlags.Device, "device", "", "Device")
 		flag.StringVar(&StartFlags.UDPDevice, "udpdev", "", "UDP Device")
 		flag.StringVar(&StartFlags.Clients, "clients", "", "Clients")
+		flag.IntVar(&StartFlags.VirtualAddrPrefix, "vaddrprefix", 0, "VirtualAddressPrefix")
 		flag.IntVar(&StartFlags.LogLevel, "log", 0, "LogLevel")
 		flag.IntVar(&StartFlags.MaxProcs, "maxprocs", 0, "LogLevel")
 		flag.BoolVar(&flagServiceInstall, "install", false, "Install service")

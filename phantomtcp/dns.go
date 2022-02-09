@@ -22,6 +22,7 @@ type DomainIP struct {
 
 var DNS string = ""
 var DNSMinTTL uint32 = 0
+var VirtualAddrPrefix byte = 255
 var ACache sync.Map
 var AAAACache sync.Map
 var HTTPSCache sync.Map
@@ -604,7 +605,7 @@ func BuildLie(request []byte, qtype int, id int) []byte {
 	case 1:
 		answer := []byte{0xC0, 0x0C, 0x00, 1,
 			0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x04,
-			6, 0}
+			VirtualAddrPrefix, 0}
 		copy(response[length:], answer)
 		length += 14
 		binary.BigEndian.PutUint16(response[length:], uint16(id))
@@ -613,7 +614,7 @@ func BuildLie(request []byte, qtype int, id int) []byte {
 	case 28:
 		answer := []byte{0xC0, 0x0C, 0x00, 28,
 			0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10,
-			0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x64, 0xff, VirtualAddrPrefix, 0x00, 0x00, 0x00, 0x00,
 			0x00, 0x00, 0x00, 0x00}
 		copy(response[length:], answer)
 		length += 24
@@ -625,7 +626,7 @@ func BuildLie(request []byte, qtype int, id int) []byte {
 			0, 1, 0, 0, 0, 16, 0, 18,
 			0, 1, 0,
 			0, 1, 0, 3, 2, 0x68, 0x32,
-			0, 4, 0, 4, 6, 0}
+			0, 4, 0, 4, VirtualAddrPrefix, 0}
 		copy(response[length:], answer)
 		length += 28
 		binary.BigEndian.PutUint16(response[length:], uint16(id))

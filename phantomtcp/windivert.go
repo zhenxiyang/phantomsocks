@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -397,13 +396,18 @@ func Redirect(dst string, to_port int, forward bool) {
 	}
 
 	var dstfilter string
-	iprange := strings.SplitN(dst, "-", 2)
-	logPrintln(1, dst)
-	if len(iprange) > 1 {
-		dstfilter = fmt.Sprintf("ip.DstAddr>=%s and ip.DstAddr<=%s and tcp", iprange[0], iprange[1])
+	dstip := net.ParseIP(dst).To4()
+	if dstip == nil {
+		return
+	}
+
+	if dstip[2] == 0 && dstip[3] == 0 {
+		dstfilter = fmt.Sprintf("ip.DstAddr>=%d.%d.0.0 and ip.DstAddr<%d.%d.255.255 and tcp", dstip[0], dstip[1], dstip[0], dstip[1])
 	} else {
 		dstfilter = fmt.Sprintf("ip.DstAddr=%s and tcp", dst)
 	}
+
+	logPrintln(1, dstfilter)
 
 	filter := fmt.Sprintf("(outbound and %s) or (ip.SrcAddr>127.255.0.0 and ip.SrcAddr<127.255.255.255 and tcp.SrcPort=%s)", dstfilter, strconv.Itoa(to_port))
 
@@ -464,7 +468,7 @@ func Redirect(dst string, to_port int, forward bool) {
 		dstPort, _ := packet.DstPort()
 
 		if srcIP[0] == 127 && dstIP[0] == 127 {
-			packet.SetSrcIP(net.IPv4(6, 0, srcIP[2], srcIP[3]))
+			packet.SetSrcIP(net.IPv4(dstip[0], dstip[1], srcIP[2], srcIP[3]))
 			packet.SetSrcPort(uint16(dstIP[2])<<8 | uint16(dstIP[3]))
 			if dstIP[1] > 1 {
 				packet.SetDstIP(net.IPv4(192, 168, 137, dstIP[1]))
