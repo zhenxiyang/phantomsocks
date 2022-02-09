@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -125,7 +124,6 @@ var StartFlags struct {
 	PacListenAddr   string `json:"pac,omitempty"`
 	SniListenAddr   string `json:"sni,omitempty"`
 	RedirectAddr    string `json:"redir,omitempty"`
-	SSListenAddr    string `json:"ss,omitempty"`
 	SystemProxy     string `json:"proxy,omitempty"`
 	DnsListenAddr   string `json:"dns,omitempty"`
 	Device          string `json:"device,omitempty"`
@@ -216,15 +214,6 @@ func StartService() {
 		go ListenAndServe(StartFlags.SniListenAddr, ptcp.SNIProxy)
 	}
 
-	if StartFlags.SSListenAddr != "" {
-		addr := StartFlags.SSListenAddr
-		if strings.HasPrefix(addr, "ss://") {
-			accesskey := base64.StdEncoding.EncodeToString([]byte(addr[5:]))
-			fmt.Println("ss://" + accesskey)
-			ptcp.ShadowsocksServer(StartFlags.SSListenAddr)
-		}
-	}
-
 	if StartFlags.RedirectAddr != "" {
 		fmt.Println("Redirect:", StartFlags.RedirectAddr)
 		go ListenAndServe(StartFlags.RedirectAddr, ptcp.RedirectProxy)
@@ -272,7 +261,6 @@ func main() {
 		flag.StringVar(&StartFlags.SocksListenAddr, "socks", "", "Socks5")
 		flag.StringVar(&StartFlags.PacListenAddr, "pac", "", "PACServer")
 		flag.StringVar(&StartFlags.SniListenAddr, "sni", "", "SNIProxy")
-		flag.StringVar(&StartFlags.SSListenAddr, "ss", "", "Shadowsocks")
 		flag.StringVar(&StartFlags.RedirectAddr, "redir", "", "Redirect")
 		flag.StringVar(&StartFlags.SystemProxy, "proxy", "", "Proxy")
 		flag.StringVar(&StartFlags.DnsListenAddr, "dns", "", "DNS")

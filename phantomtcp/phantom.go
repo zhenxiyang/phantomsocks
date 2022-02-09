@@ -100,7 +100,7 @@ var Logger *log.Logger
 
 func logPrintln(level int, v ...interface{}) {
 	if LogLevel >= level {
-		fmt.Println(v)
+		fmt.Println(v...)
 	}
 }
 

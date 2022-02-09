@@ -1,7 +1,6 @@
 package phantomtcp
 
 import (
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -681,28 +680,6 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 				return nil, proxy_err
 			}
 		}
-	case "ss":
-		cipher := u.User.Username()
-		password, _ := u.User.Password()
-
-		if u.Path != "" {
-			extHeader, err := base64.StdEncoding.DecodeString(u.Path[1:])
-			if err != nil {
-				conn.Close()
-				return nil, err
-			}
-			_, err = conn.Write(extHeader)
-			if err != nil {
-				conn.Close()
-				return nil, err
-			}
-		}
-
-		conn, err = ShadowsocksDial(conn, host, port, cipher, password)
-		if err != nil {
-			conn.Close()
-			return nil, err
-		}
 	case "redirect":
 	case "nat64":
 	default:
@@ -802,4 +779,29 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 		}
 		return conn, err
 	}
+}
+
+func relay(left, right net.Conn) (int64, int64, error) {
+	type res struct {
+		N   int64
+		Err error
+	}
+	ch := make(chan res)
+
+	go func() {
+		n, err := io.Copy(right, left)
+		right.SetDeadline(time.Now()) // wake up the other goroutine blocking on right
+		left.SetDeadline(time.Now())  // wake up the other goroutine blocking on left
+		ch <- res{n, err}
+	}()
+
+	n, err := io.Copy(left, right)
+	right.SetDeadline(time.Now()) // wake up the other goroutine blocking on right
+	left.SetDeadline(time.Now())  // wake up the other goroutine blocking on left
+	rs := <-ch
+
+	if err == nil {
+		err = rs.Err
+	}
+	return n, rs.N, err
 }
