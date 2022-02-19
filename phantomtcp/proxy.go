@@ -149,7 +149,11 @@ func SocksProxy(client net.Conn) {
 							} else if server.Option&OPT_STRIP != 0 {
 								rand.Seed(time.Now().UnixNano())
 								ipaddr := ips[rand.Intn(len(ips))]
-								conn, err = DialStrip(ipaddr.String(), "")
+								if server.Option & OPT_FRONTING != 0 {
+									conn, err = DialStrip(ipaddr.String(), "")
+								} else {
+									conn, err = DialStrip(ipaddr.String(), host)
+								}
 								if err != nil {
 									logPrintln(1, err)
 									return
@@ -364,7 +368,11 @@ func SNIProxy(client net.Conn) {
 					return
 				} else if server.Option&OPT_STRIP != 0 {
 					ip := ips[rand.Intn(len(ips))]
-					conn, err = DialStrip(ip.String(), "")
+					if server.Option & OPT_FRONTING != 0 {
+						conn, err = DialStrip(ip.String(), "")
+					} else {
+						conn, err = DialStrip(ip.String(), host)
+					}
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -494,7 +502,11 @@ func RedirectProxy(client net.Conn) {
 							return
 						} else if server.Option&OPT_STRIP != 0 {
 							ip := ips[rand.Intn(len(ips))]
-							conn, err = DialStrip(ip.String(), "")
+							if server.Option & OPT_FRONTING != 0 {
+								conn, err = DialStrip(ip.String(), "")
+							} else {
+								conn, err = DialStrip(ip.String(), host)
+							}
 							if err != nil {
 								logPrintln(1, err)
 								return
