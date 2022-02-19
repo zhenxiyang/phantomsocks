@@ -85,6 +85,7 @@ var MethodMap = map[string]uint32{
 	"https": OPT_HTTPS,
 	"move":  OPT_MOVE,
 	"strip": OPT_STRIP,
+	"fronting": OPT_FRONTING,
 	"ipv4":  OPT_IPV4,
 	"ipv6":  OPT_IPV6,
 	"mode2": OPT_MODE2,
@@ -93,7 +94,6 @@ var MethodMap = map[string]uint32{
 	"rand":  OPT_RAND,
 	"s-seg": OPT_SSEG,
 	"1-seg": OPT_1SEG,
-	"fronting": OPT_FRONTING,
 
 	"proxy": OPT_PROXY,
 }
