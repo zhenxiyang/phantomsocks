@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func DialConnInfo(laddr, raddr *net.TCPAddr, conf *Config, payload []byte) (net.Conn, *ConnectionInfo, error) {
+func DialConnInfo(laddr, raddr *net.TCPAddr, conf *PhantomServer, payload []byte) (net.Conn, *ConnectionInfo, error) {
 	addr := raddr.String()
 
 	AddConn(addr, conf.Option)
