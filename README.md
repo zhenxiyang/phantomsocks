@@ -23,6 +23,8 @@ phantomsocks
      	Netfilter TCP redirect
   -proxy string
      	Set system proxy
+  -vaddrprefix int
+      Virtual Address Prefix
 ```
 ### Socks:
 ```
@@ -39,10 +41,10 @@ macOS:
 ```
 Linux:
 iptables -t nat -A OUTPUT -d 6.0.0.0/8 -p tcp -j REDIRECT --to-port 6
-./phantomsocks -device eth0 -dns :53 -redir :6
+./phantomsocks -device eth0 -dns :53 -vaddrprefix 6 -redir :6
 
 Windows(windivert):
-./phantomsocks -redir 0.0.0.0:6 -proxy redirect://0.0.0.0:6
+./phantomsocks -redir 0.0.0.0:6 -vaddrprefix 6 -proxy redirect://0.0.0.0:6
 ```
 
 ## Configure
