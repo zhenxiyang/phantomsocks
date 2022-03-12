@@ -45,19 +45,19 @@ const (
 	OPT_KEEPALIVE = 0x1 << 10
 	OPT_SYNX2     = 0x1 << 11
 
-	OPT_HTTP  = 0x1 << 16
-	OPT_HTTPS = 0x1 << 17
-	OPT_MOVE  = 0x1 << 18
-	OPT_STRIP = 0x1 << 19
+	OPT_HTTP     = 0x1 << 16
+	OPT_HTTPS    = 0x1 << 17
+	OPT_MOVE     = 0x1 << 18
+	OPT_STRIP    = 0x1 << 19
 	OPT_FRONTING = 0x1 << 20
-	OPT_IPV4  = 0x1 << 21
-	OPT_IPV6  = 0x1 << 22
-	OPT_MODE2 = 0x1 << 23
-	OPT_DF    = 0x1 << 24
-	OPT_SAT   = 0x1 << 25
-	OPT_RAND  = 0x1 << 26
-	OPT_SSEG  = 0x1 << 27
-	OPT_1SEG  = 0x1 << 28
+	OPT_IPV4     = 0x1 << 21
+	OPT_IPV6     = 0x1 << 22
+	OPT_MODE2    = 0x1 << 23
+	OPT_DF       = 0x1 << 24
+	OPT_SAT      = 0x1 << 25
+	OPT_RAND     = 0x1 << 26
+	OPT_SSEG     = 0x1 << 27
+	OPT_1SEG     = 0x1 << 28
 
 	OPT_PROXY = 0x1 << 31
 )
@@ -81,19 +81,19 @@ var MethodMap = map[string]uint32{
 	"keep-alive": OPT_KEEPALIVE,
 	"synx2":      OPT_SYNX2,
 
-	"http":  OPT_HTTP,
-	"https": OPT_HTTPS,
-	"move":  OPT_MOVE,
-	"strip": OPT_STRIP,
+	"http":     OPT_HTTP,
+	"https":    OPT_HTTPS,
+	"move":     OPT_MOVE,
+	"strip":    OPT_STRIP,
 	"fronting": OPT_FRONTING,
-	"ipv4":  OPT_IPV4,
-	"ipv6":  OPT_IPV6,
-	"mode2": OPT_MODE2,
-	"df":    OPT_DF,
-	"sat":   OPT_SAT,
-	"rand":  OPT_RAND,
-	"s-seg": OPT_SSEG,
-	"1-seg": OPT_1SEG,
+	"ipv4":     OPT_IPV4,
+	"ipv6":     OPT_IPV6,
+	"mode2":    OPT_MODE2,
+	"df":       OPT_DF,
+	"sat":      OPT_SAT,
+	"rand":     OPT_RAND,
+	"s-seg":    OPT_SSEG,
+	"1-seg":    OPT_1SEG,
 
 	"proxy": OPT_PROXY,
 }
@@ -486,7 +486,7 @@ func LoadConfig(filename string) error {
 					}
 				} else {
 					addr, err := net.ResolveTCPAddr("tcp", keys[0])
-					if err != nil {
+					if err == nil {
 						DomainMap[keys[0]] = CurrentServer
 					} else {
 						if strings.Index(keys[0], "/") > 0 {

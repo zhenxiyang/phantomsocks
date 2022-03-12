@@ -213,18 +213,19 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 		return nil, err
 	}
 
-	length := 0
-	recvlen := 0
+	n, err := conn.Read(data)
+	if err != nil || n < 2 {
+		return nil, err
+	}
+	length := int(binary.BigEndian.Uint16(data[:2]) + 2)
+	recvlen := n
 	for {
 		n, err := conn.Read(data[recvlen:])
 		if err != nil {
 			return nil, err
 		}
-		if length == 0 {
-			length = int(binary.BigEndian.Uint16(data[:2]) + 2)
-		}
 		recvlen += n
-		if recvlen >= length {
+		if recvlen >= length || n == 0 {
 			return data[2:recvlen], nil
 		}
 	}
