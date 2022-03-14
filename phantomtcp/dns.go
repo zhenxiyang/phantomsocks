@@ -20,7 +20,6 @@ type DomainIP struct {
 	Addresses []net.IP
 }
 
-var DNS string = ""
 var DNSMinTTL uint32 = 0
 var VirtualAddrPrefix byte = 255
 var ACache sync.Map
@@ -960,9 +959,9 @@ func NSRequest(request []byte, cache bool) []byte {
 		logPrintln(2, "request:", name, conf.Server)
 		serverAddr = conf.Server
 	} else {
-		method = 0
-		logPrintln(2, "request:", name, DNS)
-		serverAddr = DNS
+		method = DefaultServer.Option
+		logPrintln(2, "request:", name, DefaultServer)
+		serverAddr = DefaultServer.Server
 	}
 
 	if serverAddr == "" {

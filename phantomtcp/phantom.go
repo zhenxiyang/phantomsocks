@@ -24,6 +24,7 @@ type PhantomServer struct {
 }
 
 var DomainMap map[string]*PhantomServer
+var DefaultServer *PhantomServer = nil
 
 var SubdomainDepth = 2
 var LogLevel = 0
@@ -320,8 +321,6 @@ func LoadConfig(filename string) error {
 	server := ""
 	device := ""
 
-	DNS = ""
-
 	var CurrentServer *PhantomServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
 
 	for {
@@ -337,12 +336,11 @@ func LoadConfig(filename string) error {
 				if len(keys) > 1 {
 					if keys[0] == "server" {
 						logPrintln(2, string(line))
-						if DNS == "" {
-							DNS = keys[1]
-						}
 						server = keys[1]
-
 						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+						if DefaultServer == nil {
+							DefaultServer = CurrentServer
+						}
 					} else if keys[0] == "dns-min-ttl" {
 						logPrintln(2, string(line))
 						ttl, err := strconv.Atoi(keys[1])
