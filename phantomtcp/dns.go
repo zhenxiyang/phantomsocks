@@ -41,20 +41,22 @@ func TCPlookup(request []byte, address string, server *PhantomServer) ([]byte, e
 			return nil, err
 		}
 		conn, err = server.Dial([]net.IP{addr.IP}, addr.Port, data[:len(request)+2])
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		conn, err = net.DialTimeout("tcp", address, time.Second*5)
 		if err != nil {
 			return nil, err
 		}
 
-		defer conn.Close()
-
 		_, err = conn.Write(data[:len(request)+2])
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
 	}
-
-	if err != nil {
-		return nil, err
-	}
+	defer conn.Close()
 
 	length := 0
 	recvlen := 0
@@ -306,8 +308,6 @@ func HTTPSlookup(request []byte, u *url.URL, host string) ([]byte, error) {
 			return nil, err
 		}
 	}
-
-	return nil, nil
 }
 
 func TFOlookup(request []byte, address string) ([]byte, error) {

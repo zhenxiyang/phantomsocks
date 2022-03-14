@@ -485,15 +485,18 @@ func LoadConfig(filename string) error {
 				} else {
 					addr, err := net.ResolveTCPAddr("tcp", keys[0])
 					if err == nil {
-						DomainMap[keys[0]] = CurrentServer
+						DomainMap[addr.String()] = CurrentServer
 					} else {
-						if strings.Index(keys[0], "/") > 0 {
-							_, ipnet, err := net.ParseCIDR(keys[0])
-							if err == nil {
-								DomainMap[ipnet.String()] = CurrentServer
-							}
+						_, ipnet, err := net.ParseCIDR(keys[0])
+						if err == nil {
+							DomainMap[ipnet.String()] = CurrentServer
 						} else {
-							DomainMap[addr.IP.String()] = CurrentServer
+							ip := net.ParseIP(keys[0])
+							if ip != nil {
+								DomainMap[ip.String()] = CurrentServer
+							} else {
+								DomainMap[keys[0]] = CurrentServer
+							}
 						}
 					}
 				}
