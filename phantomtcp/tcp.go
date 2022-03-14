@@ -302,6 +302,10 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 			if server.Option&OPT_SAT != 0 {
 				synpacket.TCP.Seq += uint32(len(b))
 				_, err = rand.Read(fakepayload)
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
 				err = ModifyAndSendPacket(synpacket, fakepayload, server.Option, server.TTL, 2)
 			}
 		}
@@ -611,7 +615,7 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 				proxy_seq += uint32(n)
 			} else {
 				n, err = conn.Write(request)
-				if err != nil {
+				if err != nil || n == 0 {
 					conn.Close()
 					return nil, err
 				}

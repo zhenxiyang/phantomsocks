@@ -107,10 +107,10 @@ func logPrintln(level int, v ...interface{}) {
 	}
 }
 
-func ConfigLookup(name string) (PhantomServer, bool) {
+func ConfigLookup(name string) *PhantomServer {
 	config, ok := DomainMap[name]
 	if ok {
-		return *config, true
+		return config
 	}
 
 	offset := 0
@@ -122,21 +122,21 @@ func ConfigLookup(name string) (PhantomServer, bool) {
 		offset += off
 		config, ok = DomainMap[name[offset:]]
 		if ok {
-			return *config, true
+			return config
 		}
 		offset++
 	}
 
-	return PhantomServer{0, 0, 0, 0, "", ""}, false
+	return DefaultServer
 }
 
-func GetConfig(name string) (PhantomServer, bool) {
+func GetConfig(name string) *PhantomServer {
 	config, ok := DomainMap[name]
 	if ok {
-		return *config, true
+		return config
 	}
 
-	return PhantomServer{0, 0, 0, 0, "", ""}, false
+	return DefaultServer
 }
 
 func GetHost(b []byte) (offset int, length int) {
@@ -559,7 +559,7 @@ func LoadHosts(filename string) error {
 				offset++
 			}
 
-			conf, ok := ConfigLookup(name)
+			conf := ConfigLookup(name)
 			index := 0
 			if ok && conf.Option != 0 {
 				index = len(Nose)

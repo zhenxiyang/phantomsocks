@@ -950,11 +950,11 @@ func NSRequest(request []byte, cache bool) []byte {
 	var response []byte
 	var err error
 
-	conf, ok := ConfigLookup(name)
+	conf := ConfigLookup(name)
 	var options ServerOptions
 	var method uint32
 	serverAddr := ""
-	if ok {
+	if conf != nil {
 		method = conf.Option
 		logPrintln(2, "request:", name, conf.Server)
 		serverAddr = conf.Server
