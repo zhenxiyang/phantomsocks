@@ -107,8 +107,7 @@ func UDPMapping(Address, Host string) error {
 	logPrintln(1, "UDPMapping:", Address, Host)
 
 	var UDPLock sync.Mutex
-	var UDPMap map[string]net.Conn
-	UDPMap = make(map[string]net.Conn)
+	var UDPMap map[string]net.Conn = make(map[string]net.Conn)
 	data := make([]byte, 1500)
 
 	for {
@@ -147,15 +146,18 @@ func UDPMapping(Address, Host string) error {
 					logPrintln(1, "[UDP]", clientAddr.String(), _host[0], str_laddr)
 
 					udpConn, err = net.DialUDP("udp", laddr, raddr)
+					if err != nil {
+						log.Println(err)
+						continue
+					}
 				} else {
 					logPrintln(1, "[UDP]", clientAddr.String(), Host)
 
 					udpConn, err = net.Dial("udp", Host)
-				}
-
-				if err != nil {
-					log.Println(err)
-					continue
+					if err != nil {
+						log.Println(err)
+						continue
+					}
 				}
 
 				UDPMap[clientAddr.String()] = udpConn
@@ -237,5 +239,4 @@ func TCPMapping(Address string, Hosts string) error {
 			}
 		}()
 	}
-	return nil
 }

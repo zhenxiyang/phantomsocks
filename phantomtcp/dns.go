@@ -58,24 +58,20 @@ func TCPlookup(request []byte, address string, server *PhantomServer) ([]byte, e
 	}
 	defer conn.Close()
 
-	length := 0
-	recvlen := 0
-	for {
-		if recvlen >= 1024 {
-			return nil, nil
-		}
-		n, err := conn.Read(data[recvlen:])
+	n, err := conn.Read(data)
+	if err != nil || n < 2 {
+		return nil, err
+	}
+	length := int(binary.BigEndian.Uint16(data[:2]) + 2)
+	recvlen := n
+	for recvlen < length && n > 0 {
+		n, err = conn.Read(data[recvlen:])
 		if err != nil {
 			return nil, err
 		}
-		if length == 0 {
-			length = int(binary.BigEndian.Uint16(data[:2]) + 2)
-		}
 		recvlen += n
-		if recvlen >= length {
-			return data[2:recvlen], nil
-		}
 	}
+	return data[2:recvlen], nil
 }
 
 func TCPlookupDNS64(request []byte, address string, offset int, prefix []byte) ([]byte, error) {
@@ -220,16 +216,14 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	}
 	length := int(binary.BigEndian.Uint16(data[:2]) + 2)
 	recvlen := n
-	for {
-		n, err := conn.Read(data[recvlen:])
+	for recvlen < length && n > 0 {
+		n, err = conn.Read(data[recvlen:])
 		if err != nil {
 			return nil, err
 		}
 		recvlen += n
-		if recvlen >= length || n == 0 {
-			return data[2:recvlen], nil
-		}
 	}
+	return data[2:recvlen], nil
 }
 
 func HTTPSlookup(request []byte, u *url.URL, host string) ([]byte, error) {
@@ -327,24 +321,20 @@ func TFOlookup(request []byte, address string) ([]byte, error) {
 		return nil, err
 	}
 
-	length := 0
-	recvlen := 0
-	for {
-		if recvlen >= 1024 {
-			return nil, nil
-		}
-		n, err := conn.Read(data[recvlen:])
+	n, err := conn.Read(data)
+	if err != nil || n < 2 {
+		return nil, err
+	}
+	length := int(binary.BigEndian.Uint16(data[:2]) + 2)
+	recvlen := n
+	for recvlen < length && n > 0 {
+		n, err = conn.Read(data[recvlen:])
 		if err != nil {
 			return nil, err
 		}
-		if length == 0 {
-			length = int(binary.BigEndian.Uint16(data[:2]) + 2)
-		}
 		recvlen += n
-		if recvlen >= length {
-			return data[2:recvlen], nil
-		}
 	}
+	return data[2:recvlen], nil
 }
 
 func GetQName(buf []byte) (string, int, int) {

@@ -562,9 +562,9 @@ func LoadHosts(filename string) error {
 				offset++
 			}
 
-			conf := ConfigLookup(name)
+			server := ConfigLookup(name)
 			index := 0
-			if ok && conf.Option != 0 {
+			if ok && server.Option != 0 {
 				index = len(Nose)
 				Nose = append(Nose, name)
 			}

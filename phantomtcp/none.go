@@ -1,16 +1,9 @@
-// +build !pcap
-// +build !rawsocket
-// +build !windivert
+//go:build !pcap && !rawsocket && !windivert
+// +build !pcap,!rawsocket,!windivert
 
 package phantomtcp
 
 func DevicePrint() {
-}
-
-func connectionMonitor(device string) {
-}
-
-func udpMonitor(device string) {
 }
 
 func ConnectionMonitor(devices []string) bool {
