@@ -520,12 +520,12 @@ func RedirectDNS() {
 			continue
 		}
 
-		conf, ok := ConfigLookup(qname)
-		if ok {
-			logPrintln(1, qname, conf)
+		server := ConfigLookup(qname)
+		if server != nil {
+			logPrintln(1, qname, server)
 			var response []byte
-			if (conf.Option & OPT_MODIFY) != 0 {
-				index, _ := NSLookup(qname, conf.Option, conf.Server)
+			if (server.Option & OPT_MODIFY) != 0 {
+				index, _ := NSLookup(qname, server.Option, server.Server)
 				if qtype == 28 {
 					response = BuildResponse(request, qtype, 0, nil)
 				} else {
