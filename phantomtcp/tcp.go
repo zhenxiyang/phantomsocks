@@ -1,6 +1,7 @@
 package phantomtcp
 
 import (
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -627,7 +628,36 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 				return nil, errors.New("failed to connect to proxy")
 			}
 		}
+	case "https":
+		{
+			var b [264]byte
+			if method != 0 {
+				err := ModifyAndSendPacket(synpacket, b[:], method, server.TTL, 2)
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
+			}
+			conf := &tls.Config{
+				InsecureSkipVerify: true,
+			}
+			conn = tls.Client(conn, conf)
+			request := []byte(fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", address))
+			n, err := conn.Write(request)
+			if err != nil || n == 0 {
+				conn.Close()
+				return nil, err
+			}
+			var response [128]byte
+			n, err = conn.Read(response[:])
+			if err != nil || !strings.HasPrefix(string(response[:n]), "HTTP/1.1 200 ") {
+				conn.Close()
+				return nil, errors.New("failed to connect to proxy")
+			}
+		}
 	case "socks":
+		fallthrough
+	case "socks5":
 		{
 			var b [264]byte
 			if method != 0 {
@@ -684,6 +714,51 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 				return nil, proxy_err
 			}
 		}
+	case "socks4":
+		fallthrough
+	case "socks4a":
+		{
+			var b [264]byte
+			if method != 0 {
+				err := ModifyAndSendPacket(synpacket, b[:], method, server.TTL, 2)
+				if err != nil {
+					conn.Close()
+					return nil, err
+				}
+			}
+
+			copy(b[:], []byte{0x04, 0x01})
+			binary.BigEndian.PutUint16(b[2:], uint16(port))
+
+			requestLen := 0
+			ip := net.ParseIP(host).To4()
+			if ip != nil {
+				copy(b[4:], ip[:4])
+				b[8] = 0
+				requestLen = 9
+			} else {
+				copy(b[4:], []byte{0, 0, 0, 1, 0})
+				copy(b[9:], []byte(host))
+				requestLen = 9 + len(host)
+				b[requestLen] = 0
+				requestLen++
+			}
+			n, err := conn.Write(b[:requestLen])
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+			proxy_seq += uint32(n)
+			n, err = conn.Read(b[:8])
+			if err != nil {
+				conn.Close()
+				return nil, err
+			}
+			if n < 8 || b[0] != 0 || b[1] != 90 {
+				conn.Close()
+				return nil, proxy_err
+			}
+		}
 	case "redirect":
 	case "nat64":
 	default:
@@ -691,7 +766,7 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 		return nil, proxy_err
 	}
 
-	if method == 0 {
+	if method == 0 || scheme == "https" {
 		if header != nil {
 			_, err = conn.Write(header)
 			if err != nil {
