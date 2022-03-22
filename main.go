@@ -18,8 +18,8 @@ import (
 
 var allowlist map[string]bool = nil
 
-func ListenAndServe(listenAddr string, serve func(net.Conn)) {
-	l, err := net.Listen("tcp", listenAddr)
+func ListenAndServe(network, address string, serve func(net.Conn)) {
+	l, err := net.Listen(network, address)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -122,7 +122,8 @@ var StartFlags struct {
 	HostsFile         string `json:"hosts,omitempty"`
 	SocksListenAddr   string `json:"socks,omitempty"`
 	PacListenAddr     string `json:"pac,omitempty"`
-	SniListenAddr     string `json:"sni,omitempty"`
+	SNIListenAddr     string `json:"sni,omitempty"`
+	QUICListenAddr    string `json:"quic,omitempty"`
 	RedirectAddr      string `json:"redir,omitempty"`
 	SystemProxy       string `json:"proxy,omitempty"`
 	DnsListenAddr     string `json:"dns,omitempty"`
@@ -204,20 +205,25 @@ func StartService() {
 
 	if StartFlags.SocksListenAddr != "" {
 		fmt.Println("Socks:", StartFlags.SocksListenAddr)
-		go ListenAndServe(StartFlags.SocksListenAddr, ptcp.SocksProxy)
+		go ListenAndServe("tcp", StartFlags.SocksListenAddr, ptcp.SocksProxy)
 		if StartFlags.PacListenAddr != "" {
 			go PACServer(StartFlags.PacListenAddr, StartFlags.SocksListenAddr)
 		}
 	}
 
-	if StartFlags.SniListenAddr != "" {
-		fmt.Println("SNI:", StartFlags.SniListenAddr)
-		go ListenAndServe(StartFlags.SniListenAddr, ptcp.SNIProxy)
+	if StartFlags.SNIListenAddr != "" {
+		fmt.Println("SNI:", StartFlags.SNIListenAddr)
+		go ListenAndServe("tcp", StartFlags.SNIListenAddr, ptcp.SNIProxy)
+	}
+
+	if StartFlags.QUICListenAddr != "" {
+		fmt.Println("QUIC:", StartFlags.QUICListenAddr)
+		go ListenAndServe("udp", StartFlags.QUICListenAddr, ptcp.QUICProxy)
 	}
 
 	if StartFlags.RedirectAddr != "" {
 		fmt.Println("Redirect:", StartFlags.RedirectAddr)
-		go ListenAndServe(StartFlags.RedirectAddr, ptcp.RedirectProxy)
+		go ListenAndServe("tcp", StartFlags.RedirectAddr, ptcp.RedirectProxy)
 	}
 
 	if StartFlags.SystemProxy != "" {
@@ -265,7 +271,8 @@ func main() {
 		flag.StringVar(&StartFlags.HostsFile, "hosts", "", "Hosts")
 		flag.StringVar(&StartFlags.SocksListenAddr, "socks", "", "Socks5")
 		flag.StringVar(&StartFlags.PacListenAddr, "pac", "", "PACServer")
-		flag.StringVar(&StartFlags.SniListenAddr, "sni", "", "SNIProxy")
+		flag.StringVar(&StartFlags.SNIListenAddr, "sni", "", "SNIProxy")
+		flag.StringVar(&StartFlags.QUICListenAddr, "quic", "", "QUICProxy")
 		flag.StringVar(&StartFlags.RedirectAddr, "redir", "", "Redirect")
 		flag.StringVar(&StartFlags.SystemProxy, "proxy", "", "Proxy")
 		flag.StringVar(&StartFlags.DnsListenAddr, "dns", "", "DNS")

@@ -31,7 +31,8 @@ var LogLevel = 0
 var Forward bool = false
 
 const (
-	OPT_NONE  = 0x0
+	OPT_NONE = 0x0
+
 	OPT_TTL   = 0x1 << 0
 	OPT_MSS   = 0x1 << 1
 	OPT_WMD5  = 0x1 << 2
@@ -41,26 +42,27 @@ const (
 	OPT_WSEQ  = 0x1 << 6
 	OPT_WTIME = 0x1 << 7
 
-	OPT_TFO       = 0x1 << 8
-	OPT_HTFO      = 0x1 << 9
-	OPT_KEEPALIVE = 0x1 << 10
-	OPT_SYNX2     = 0x1 << 11
+	OPT_TFO  = 0x1 << 8
+	OPT_QUIC = 0x1 << 9
 
-	OPT_HTTP     = 0x1 << 16
-	OPT_HTTPS    = 0x1 << 17
-	OPT_MOVE     = 0x1 << 18
-	OPT_STRIP    = 0x1 << 19
-	OPT_FRONTING = 0x1 << 20
-	OPT_IPV4     = 0x1 << 21
-	OPT_IPV6     = 0x1 << 22
-	OPT_MODE2    = 0x1 << 23
-	OPT_DF       = 0x1 << 24
-	OPT_SAT      = 0x1 << 25
-	OPT_RAND     = 0x1 << 26
-	OPT_SSEG     = 0x1 << 27
-	OPT_1SEG     = 0x1 << 28
+	OPT_MODE2     = 0x1 << 10
+	OPT_DF        = 0x1 << 11
+	OPT_SAT       = 0x1 << 12
+	OPT_RAND      = 0x1 << 13
+	OPT_SSEG      = 0x1 << 14
+	OPT_1SEG      = 0x1 << 15
+	OPT_HTFO      = 0x1 << 16
+	OPT_KEEPALIVE = 0x1 << 17
+	OPT_SYNX2     = 0x1 << 18
 
-	OPT_PROXY = 0x1 << 31
+	OPT_HTTP     = 0x1 << 23
+	OPT_HTTPS    = 0x1 << 24
+	OPT_MOVE     = 0x1 << 25
+	OPT_STRIP    = 0x1 << 26
+	OPT_FRONTING = 0x1 << 27
+	OPT_IPV4     = 0x1 << 28
+	OPT_IPV6     = 0x1 << 29
+	OPT_PROXY    = 0x1 << 30
 )
 
 const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME

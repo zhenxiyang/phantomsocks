@@ -557,3 +557,78 @@ func RedirectProxy(client net.Conn) {
 		logPrintln(1, "relay error:", err)
 	}
 }
+
+func QUICProxy(client net.Conn) {
+	defer client.Close()
+
+	data := make([]byte, 1500)
+	var conn net.Conn
+	{
+		n, err := client.Read(data)
+		if err != nil {
+			logPrintln(1, err)
+			return
+		}
+
+		SNI := ""
+		switch data[0] {
+		case 0x0d:
+			{
+				Version := data[9:13]
+				if !(n > 23 && Version[0] == 'Q') {
+					return
+				}
+				if !(n > 26 && data[26] == 0xa0) {
+					return
+				}
+
+				Tag := data[30:34]
+				if !(n > 36 && string(Tag) == "CHLO") {
+					return
+				}
+				TagNum := int(binary.LittleEndian.Uint16(data[34:36]))
+
+				var SNIOffset uint16 = 0
+				for i := 0; i < TagNum; i++ {
+					offset := 38 + i*6
+					TagName := string(data[offset : offset+4])
+					OffsetEnd := binary.LittleEndian.Uint16(data[offset+4 : offset+6])
+					if TagName == "SNI" {
+						SNI = string(data[38+i*6:][SNIOffset:OffsetEnd])
+						break
+					} else {
+						SNIOffset = OffsetEnd
+					}
+				}
+			}
+		}
+
+		if SNI != "" {
+			server := ConfigLookup(SNI)
+			if server.Option&OPT_QUIC == 0 {
+				return
+			}
+
+			_, ips := NSLookup(SNI, server.Option, server.Server)
+			if ips == nil {
+				return
+			}
+
+			conn, err = net.DialUDP("udp", nil, &net.UDPAddr{IP: ips[0], Port: 443})
+			if err != nil {
+				logPrintln(1, err)
+				return
+			}
+			conn.Write(data[:n])
+		}
+	}
+
+	defer conn.Close()
+
+	_, _, err := relay(client, conn)
+	if err != nil {
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			return
+		}
+	}
+}
