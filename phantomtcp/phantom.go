@@ -79,7 +79,15 @@ var MethodMap = map[string]uint32{
 	"w-seq":  OPT_WSEQ,
 	"w-time": OPT_WTIME,
 
-	"tfo":        OPT_TFO,
+	"tfo":  OPT_TFO,
+	"quic": OPT_QUIC,
+
+	"mode2":      OPT_MODE2,
+	"df":         OPT_DF,
+	"sat":        OPT_SAT,
+	"rand":       OPT_RAND,
+	"s-seg":      OPT_SSEG,
+	"1-seg":      OPT_1SEG,
 	"half-tfo":   OPT_HTFO,
 	"keep-alive": OPT_KEEPALIVE,
 	"synx2":      OPT_SYNX2,
@@ -91,14 +99,7 @@ var MethodMap = map[string]uint32{
 	"fronting": OPT_FRONTING,
 	"ipv4":     OPT_IPV4,
 	"ipv6":     OPT_IPV6,
-	"mode2":    OPT_MODE2,
-	"df":       OPT_DF,
-	"sat":      OPT_SAT,
-	"rand":     OPT_RAND,
-	"s-seg":    OPT_SSEG,
-	"1-seg":    OPT_1SEG,
-
-	"proxy": OPT_PROXY,
+	"proxy":    OPT_PROXY,
 }
 
 var Logger *log.Logger
@@ -222,23 +223,26 @@ func GetQUICSNI(b []byte) string {
 				return ""
 			}
 
-			Tag := b[30:34]
-			if !(len(b) > 36 && string(Tag) == "CHLO") {
+			Tag := string(b[30:34])
+			if !(len(b) > 36 && Tag == "CHLO") {
 				return ""
 			}
 			TagNum := int(binary.LittleEndian.Uint16(b[34:36]))
 
-			BaseOffset := 38 + 6*TagNum
+			BaseOffset := 38 + 8*TagNum
 			if !(len(b) > BaseOffset) {
 				return ""
 			}
 
 			var SNIOffset uint16 = 0
 			for i := 0; i < TagNum; i++ {
-				offset := 38 + i*6
-				TagName := string(b[offset : offset+4])
+				offset := 38 + i*8
+				TagName := b[offset : offset+4]
 				OffsetEnd := binary.LittleEndian.Uint16(b[offset+4 : offset+6])
-				if TagName == "SNI" {
+				if bytes.Equal(TagName, []byte{'S', 'N', 'I', 0}) {
+					if len(b[BaseOffset:]) < int(OffsetEnd) {
+						return ""
+					}
 					return string(b[BaseOffset:][SNIOffset:OffsetEnd])
 				} else {
 					SNIOffset = OffsetEnd
