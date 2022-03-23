@@ -18,8 +18,8 @@ import (
 
 var allowlist map[string]bool = nil
 
-func ListenAndServe(network, address string, serve func(net.Conn)) {
-	l, err := net.Listen(network, address)
+func ListenAndServe(listenAddr string, serve func(net.Conn)) {
+	l, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -205,7 +205,7 @@ func StartService() {
 
 	if StartFlags.SocksListenAddr != "" {
 		fmt.Println("Socks:", StartFlags.SocksListenAddr)
-		go ListenAndServe("tcp", StartFlags.SocksListenAddr, ptcp.SocksProxy)
+		go ListenAndServe(StartFlags.SocksListenAddr, ptcp.SocksProxy)
 		if StartFlags.PacListenAddr != "" {
 			go PACServer(StartFlags.PacListenAddr, StartFlags.SocksListenAddr)
 		}
@@ -213,17 +213,17 @@ func StartService() {
 
 	if StartFlags.SNIListenAddr != "" {
 		fmt.Println("SNI:", StartFlags.SNIListenAddr)
-		go ListenAndServe("tcp", StartFlags.SNIListenAddr, ptcp.SNIProxy)
+		go ListenAndServe(StartFlags.SNIListenAddr, ptcp.SNIProxy)
 	}
 
 	if StartFlags.QUICListenAddr != "" {
 		fmt.Println("QUIC:", StartFlags.QUICListenAddr)
-		go ListenAndServe("udp", StartFlags.QUICListenAddr, ptcp.QUICProxy)
+		go ptcp.QUICProxy(StartFlags.QUICListenAddr)
 	}
 
 	if StartFlags.RedirectAddr != "" {
 		fmt.Println("Redirect:", StartFlags.RedirectAddr)
-		go ListenAndServe("tcp", StartFlags.RedirectAddr, ptcp.RedirectProxy)
+		go ListenAndServe(StartFlags.RedirectAddr, ptcp.RedirectProxy)
 	}
 
 	if StartFlags.SystemProxy != "" {

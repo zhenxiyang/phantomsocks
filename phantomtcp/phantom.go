@@ -210,6 +210,46 @@ func GetSNI(b []byte) (offset int, length int) {
 	return 0, 0
 }
 
+func GetQUICSNI(b []byte) string {
+	switch b[0] {
+	case 0x0d:
+		{
+			Version := string(b[9:13])
+			if !(len(b) > 23 && Version == "Q043") {
+				return ""
+			}
+			if !(len(b) > 26 && b[26] == 0xa0) {
+				return ""
+			}
+
+			Tag := b[30:34]
+			if !(len(b) > 36 && string(Tag) == "CHLO") {
+				return ""
+			}
+			TagNum := int(binary.LittleEndian.Uint16(b[34:36]))
+
+			BaseOffset := 38 + 6*TagNum
+			if !(len(b) > BaseOffset) {
+				return ""
+			}
+
+			var SNIOffset uint16 = 0
+			for i := 0; i < TagNum; i++ {
+				offset := 38 + i*6
+				TagName := string(b[offset : offset+4])
+				OffsetEnd := binary.LittleEndian.Uint16(b[offset+4 : offset+6])
+				if TagName == "SNI" {
+					return string(b[BaseOffset:][SNIOffset:OffsetEnd])
+				} else {
+					SNIOffset = OffsetEnd
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
 func HttpMove(conn net.Conn, host string, b []byte) bool {
 	data := make([]byte, 1460)
 	n := 0
