@@ -587,12 +587,11 @@ func QUICProxy(address string) {
 			if SNI != "" {
 				server := ConfigLookup(SNI)
 				if server.Option&OPT_QUIC == 0 {
-					return
+					continue
 				}
-
 				_, ips := NSLookup(SNI, server.Option, server.Server)
 				if ips == nil {
-					return
+					continue
 				}
 
 				logPrintln(1, "[QUIC]", clientAddr.String(), SNI, ips)
@@ -603,10 +602,19 @@ func QUICProxy(address string) {
 					continue
 				}
 
+				if server.Option&OPT_ZERO != 0 {
+					zero_data := make([]byte, 8+rand.Intn(1024))
+					_, err = udpConn.Write(zero_data)
+					if err != nil {
+						logPrintln(1, err)
+						continue
+					}
+				}
+
 				UDPMap[clientAddr.String()] = udpConn
 				_, err = udpConn.Write(data[:n])
 				if err != nil {
-					log.Println(err)
+					logPrintln(1, err)
 					continue
 				}
 
@@ -620,7 +628,6 @@ func QUICProxy(address string) {
 							delete(UDPMap, clientAddr.String())
 							UDPLock.Unlock()
 							udpConn.Close()
-
 							return
 						}
 						udpConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
