@@ -123,7 +123,6 @@ var StartFlags struct {
 	SocksListenAddr   string `json:"socks,omitempty"`
 	PacListenAddr     string `json:"pac,omitempty"`
 	SNIListenAddr     string `json:"sni,omitempty"`
-	QUICListenAddr    string `json:"quic,omitempty"`
 	RedirectAddr      string `json:"redir,omitempty"`
 	SystemProxy       string `json:"proxy,omitempty"`
 	DnsListenAddr     string `json:"dns,omitempty"`
@@ -214,11 +213,7 @@ func StartService() {
 	if StartFlags.SNIListenAddr != "" {
 		fmt.Println("SNI:", StartFlags.SNIListenAddr)
 		go ListenAndServe(StartFlags.SNIListenAddr, ptcp.SNIProxy)
-	}
-
-	if StartFlags.QUICListenAddr != "" {
-		fmt.Println("QUIC:", StartFlags.QUICListenAddr)
-		go ptcp.QUICProxy(StartFlags.QUICListenAddr)
+		go ptcp.QUICProxy(StartFlags.SNIListenAddr)
 	}
 
 	if StartFlags.RedirectAddr != "" {
@@ -272,7 +267,6 @@ func main() {
 		flag.StringVar(&StartFlags.SocksListenAddr, "socks", "", "Socks5")
 		flag.StringVar(&StartFlags.PacListenAddr, "pac", "", "PACServer")
 		flag.StringVar(&StartFlags.SNIListenAddr, "sni", "", "SNIProxy")
-		flag.StringVar(&StartFlags.QUICListenAddr, "quic", "", "QUICProxy")
 		flag.StringVar(&StartFlags.RedirectAddr, "redir", "", "Redirect")
 		flag.StringVar(&StartFlags.SystemProxy, "proxy", "", "Proxy")
 		flag.StringVar(&StartFlags.DnsListenAddr, "dns", "", "DNS")

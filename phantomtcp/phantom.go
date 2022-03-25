@@ -214,41 +214,76 @@ func GetSNI(b []byte) (offset int, length int) {
 }
 
 func GetQUICSNI(b []byte) string {
-	switch b[0] {
-	case 0x0d:
-		{
-			Version := string(b[9:13])
-			if !(len(b) > 23 && Version == "Q043") {
-				return ""
-			}
-			if !(len(b) > 26 && b[26] == 0xa0) {
-				return ""
-			}
+	if b[0] == 0x0d {
+		if !(len(b) > 23 && string(b[9:13]) == "Q043") {
+			return ""
+		}
+		if !(len(b) > 26 && b[26] == 0xa0) {
+			return ""
+		}
 
-			Tag := string(b[30:34])
-			if !(len(b) > 36 && Tag == "CHLO") {
-				return ""
-			}
-			TagNum := int(binary.LittleEndian.Uint16(b[34:36]))
+		if !(len(b) > 38 && string(b[30:34]) == "CHLO") {
+			return ""
+		}
+		TagNum := int(binary.LittleEndian.Uint16(b[34:36]))
 
-			BaseOffset := 38 + 8*TagNum
-			if !(len(b) > BaseOffset) {
-				return ""
-			}
+		BaseOffset := 38 + 8*TagNum
+		if !(len(b) > BaseOffset) {
+			return ""
+		}
 
-			var SNIOffset uint16 = 0
-			for i := 0; i < TagNum; i++ {
-				offset := 38 + i*8
-				TagName := b[offset : offset+4]
-				OffsetEnd := binary.LittleEndian.Uint16(b[offset+4 : offset+6])
-				if bytes.Equal(TagName, []byte{'S', 'N', 'I', 0}) {
-					if len(b[BaseOffset:]) < int(OffsetEnd) {
-						return ""
-					}
-					return string(b[BaseOffset:][SNIOffset:OffsetEnd])
-				} else {
-					SNIOffset = OffsetEnd
+		var SNIOffset uint16 = 0
+		for i := 0; i < TagNum; i++ {
+			offset := 38 + i*8
+			TagName := b[offset : offset+4]
+			OffsetEnd := binary.LittleEndian.Uint16(b[offset+4 : offset+6])
+			if bytes.Equal(TagName, []byte{'S', 'N', 'I', 0}) {
+				if len(b[BaseOffset:]) < int(OffsetEnd) {
+					return ""
 				}
+				return string(b[BaseOffset:][SNIOffset:OffsetEnd])
+			} else {
+				SNIOffset = OffsetEnd
+			}
+		}
+	} else if b[0]&0xc0 == 0xc0 {
+		if !(len(b) > 5) {
+			return ""
+		}
+		Version := string(b[1:5])
+		switch Version {
+		case "Q046":
+		case "Q050":
+			return "" //TODO
+		default:
+			return ""
+		}
+		if !(len(b) > 31 && b[30] == 0xa0) {
+			return ""
+		}
+
+		if !(len(b) > 42 && string(b[34:38]) == "CHLO") {
+			return ""
+		}
+		TagNum := int(binary.LittleEndian.Uint16(b[38:40]))
+
+		BaseOffset := 42 + 8*TagNum
+		if !(len(b) > BaseOffset) {
+			return ""
+		}
+
+		var SNIOffset uint16 = 0
+		for i := 0; i < TagNum; i++ {
+			offset := 42 + i*8
+			TagName := b[offset : offset+4]
+			OffsetEnd := binary.LittleEndian.Uint16(b[offset+4 : offset+6])
+			if bytes.Equal(TagName, []byte{'S', 'N', 'I', 0}) {
+				if len(b[BaseOffset:]) < int(OffsetEnd) {
+					return ""
+				}
+				return string(b[BaseOffset:][SNIOffset:OffsetEnd])
+			} else {
+				SNIOffset = OffsetEnd
 			}
 		}
 	}
