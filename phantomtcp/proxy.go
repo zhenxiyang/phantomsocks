@@ -68,10 +68,10 @@ func SocksProxy(client net.Conn) {
 			}
 			reply = []byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0}
 		} else if b[0] == 0x04 {
-			userEnd := bytes.IndexByte(b[:n], 0)
-			if userEnd >= 8 && b[1] == 1 {
+			if n > 8 && b[1] == 1 {
+				userEnd := bytes.IndexByte(b[:n], 0)
 				port = int(binary.BigEndian.Uint16(b[2:4]))
-				if n > userEnd && b[4]|b[5]|b[6] == 0 {
+				if b[4]|b[5]|b[6] == 0 {
 					hostEnd := bytes.IndexByte(b[userEnd+1:n], 0)
 					if hostEnd > 0 {
 						host = string(b[userEnd+1 : userEnd+1+hostEnd])
@@ -80,7 +80,7 @@ func SocksProxy(client net.Conn) {
 						return
 					}
 				} else {
-					if b[0] == VirtualAddrPrefix {
+					if b[4] == VirtualAddrPrefix {
 						index := int(binary.BigEndian.Uint32(b[6:8]))
 						if index >= len(Nose) {
 							return
@@ -548,8 +548,6 @@ func RedirectProxy(client net.Conn) {
 
 	defer conn.Close()
 
-	//go io.Copy(client, conn)
-	//io.Copy(conn, client)
 	_, _, err := relay(client, conn)
 	if err != nil {
 		if err, ok := err.(net.Error); ok && err.Timeout() {
@@ -662,10 +660,10 @@ func Socks4UProxy(address string) {
 
 		var host string
 		var port int
-		userEnd := bytes.IndexByte(data[:n], 0)
-		if userEnd >= 8 && data[0] == 4 && data[1] == 1 {
+		if n > 8 && data[0] == 4 && data[1] == 1 {
+			userEnd := 8 + bytes.IndexByte(data[8:n], 0)
 			port = int(binary.BigEndian.Uint16(data[2:4]))
-			if n > userEnd && data[4]|data[5]|data[6] == 0 {
+			if data[4]|data[5]|data[6] == 0 {
 				hostEnd := bytes.IndexByte(data[userEnd+1:n], 0)
 				if hostEnd > 0 {
 					host = string(data[userEnd+1 : userEnd+1+hostEnd])
@@ -674,7 +672,7 @@ func Socks4UProxy(address string) {
 					continue
 				}
 			} else {
-				if data[0] == VirtualAddrPrefix {
+				if data[4] == VirtualAddrPrefix {
 					index := int(binary.BigEndian.Uint32(data[6:8]))
 					if index >= len(Nose) {
 						return
