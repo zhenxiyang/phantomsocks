@@ -124,6 +124,7 @@ var StartFlags struct {
 	PacListenAddr     string `json:"pac,omitempty"`
 	SNIListenAddr     string `json:"sni,omitempty"`
 	RedirectAddr      string `json:"redir,omitempty"`
+	TProxyAddr        string `json:"tproxy,omitempty"`
 	SystemProxy       string `json:"proxy,omitempty"`
 	DnsListenAddr     string `json:"dns,omitempty"`
 	Device            string `json:"device,omitempty"`
@@ -221,6 +222,11 @@ func StartService() {
 		go ListenAndServe(StartFlags.RedirectAddr, ptcp.RedirectProxy)
 	}
 
+	if StartFlags.TProxyAddr != "" {
+		fmt.Println("TProxy:", StartFlags.TProxyAddr)
+		go ptcp.TProxyUDP(StartFlags.TProxyAddr)
+	}
+
 	if StartFlags.SystemProxy != "" {
 		for _, dev := range devices {
 			err := proxy.SetProxy(dev, StartFlags.SystemProxy, true)
@@ -268,6 +274,7 @@ func main() {
 		flag.StringVar(&StartFlags.PacListenAddr, "pac", "", "PACServer")
 		flag.StringVar(&StartFlags.SNIListenAddr, "sni", "", "SNIProxy")
 		flag.StringVar(&StartFlags.RedirectAddr, "redir", "", "Redirect")
+		flag.StringVar(&StartFlags.TProxyAddr, "tproxy", "", "TProxy")
 		flag.StringVar(&StartFlags.SystemProxy, "proxy", "", "Proxy")
 		flag.StringVar(&StartFlags.DnsListenAddr, "dns", "", "DNS")
 		flag.StringVar(&StartFlags.Device, "device", "", "Device")

@@ -122,6 +122,7 @@ func UDPMapping(Address, Host string) error {
 		if ok {
 			udpConn.Write(data[:n])
 		} else {
+			var remoteConn net.Conn
 			if len(Host) > 0 {
 				_host := strings.SplitN(Host, "@", 2)
 				if len(_host) == 2 {
@@ -145,7 +146,7 @@ func UDPMapping(Address, Host string) error {
 
 					logPrintln(1, "[UDP]", clientAddr.String(), _host[0], str_laddr)
 
-					udpConn, err = net.DialUDP("udp", laddr, raddr)
+					remoteConn, err = net.DialUDP("udp", laddr, raddr)
 					if err != nil {
 						log.Println(err)
 						continue
@@ -153,37 +154,37 @@ func UDPMapping(Address, Host string) error {
 				} else {
 					logPrintln(1, "[UDP]", clientAddr.String(), Host)
 
-					udpConn, err = net.Dial("udp", Host)
+					remoteConn, err = net.Dial("udp", Host)
 					if err != nil {
 						log.Println(err)
 						continue
 					}
 				}
 
-				UDPMap[clientAddr.String()] = udpConn
-				_, err = udpConn.Write(data[:n])
+				UDPMap[clientAddr.String()] = remoteConn
+				_, err = remoteConn.Write(data[:n])
 				if err != nil {
 					log.Println(err)
 					continue
 				}
 
-				go func(clientAddr net.UDPAddr) {
+				go func(clientAddr net.UDPAddr, remoteConn net.Conn) {
 					data := make([]byte, 1500)
-					udpConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
+					remoteConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
 					for {
-						n, err := udpConn.Read(data)
+						n, err := remoteConn.Read(data)
 						if err != nil {
 							UDPLock.Lock()
 							delete(UDPMap, clientAddr.String())
 							UDPLock.Unlock()
-							udpConn.Close()
+							remoteConn.Close()
 
 							return
 						}
-						udpConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
+						remoteConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
 						client.WriteToUDP(data[:n], &clientAddr)
 					}
-				}(*clientAddr)
+				}(*clientAddr, remoteConn)
 			}
 		}
 	}
