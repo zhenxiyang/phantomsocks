@@ -716,6 +716,8 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 		}
 	case "socks4":
 		fallthrough
+	case "socks4u":
+		fallthrough
 	case "socks4a":
 		{
 			var b [264]byte

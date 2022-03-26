@@ -1,9 +1,11 @@
 package phantomtcp
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math/rand"
 	"net"
+	"strconv"
 
 	"github.com/macronut/go-tproxy"
 )
@@ -64,17 +66,28 @@ func TProxyUDP(address string) {
 			continue
 		}
 
-		_, ips := NSLookup(host, server.Option, server.Server)
-		if ips == nil {
-			localConn.Close()
-			continue
+		var remoteConn net.Conn = nil
+		var proxyConn net.Conn = nil
+		if server.Option&OPT_PROXY != 0 {
+			remoteAddress := net.JoinHostPort(host, strconv.Itoa(dstAddr.Port))
+			remoteConn, proxyConn, err = server.DialProxyUDP(remoteAddress)
+		} else {
+			_, ips := NSLookup(host, server.Option, server.Server)
+			if ips == nil {
+				localConn.Close()
+				continue
+			}
+
+			raddr := net.UDPAddr{IP: ips[0], Port: dstAddr.Port}
+			remoteConn, err = net.DialUDP("udp", nil, &raddr)
 		}
 
-		raddr := net.UDPAddr{IP: ips[0], Port: dstAddr.Port}
-		remoteConn, err := net.DialUDP("udp", nil, &raddr)
 		if err != nil {
 			logPrintln(1, err)
 			localConn.Close()
+			if proxyConn != nil {
+				proxyConn.Close()
+			}
 			continue
 		}
 
@@ -84,6 +97,9 @@ func TProxyUDP(address string) {
 			if err != nil {
 				logPrintln(1, err)
 				localConn.Close()
+				if proxyConn != nil {
+					proxyConn.Close()
+				}
 				continue
 			}
 		}
@@ -92,13 +108,143 @@ func TProxyUDP(address string) {
 		if err != nil {
 			logPrintln(1, err)
 			localConn.Close()
+			if proxyConn != nil {
+				proxyConn.Close()
+			}
 			continue
 		}
 
-		go func(localConn, remoteConn net.Conn) {
+		go func(localConn, remoteConn, proxyConn net.Conn) {
 			relayUDP(localConn, remoteConn)
 			remoteConn.Close()
 			localConn.Close()
-		}(localConn, remoteConn)
+			if proxyConn != nil {
+				proxyConn.Close()
+			}
+		}(localConn, remoteConn, proxyConn)
+	}
+}
+
+func Socks4UProxy(address string) {
+	laddr, err := net.ResolveUDPAddr("udp", address)
+	if err != nil {
+		logPrintln(1, err)
+		return
+	}
+	client, err := net.ListenUDP("udp", laddr)
+	if err != nil {
+		logPrintln(1, err)
+		return
+	}
+	defer client.Close()
+
+	data := make([]byte, 1500)
+	for {
+		n, srcAddr, err := client.ReadFromUDP(data)
+		if err != nil {
+			logPrintln(1, err)
+			continue
+		}
+
+		var host string
+		var port int
+		userEnd := bytes.IndexByte(data[:n], 0)
+		if userEnd >= 8 && data[0] == 4 && data[1] == 1 {
+			port = int(binary.BigEndian.Uint16(data[2:4]))
+			if n > userEnd && data[4]|data[5]|data[6] == 0 {
+				hostEnd := bytes.IndexByte(data[userEnd+1:n], 0)
+				if hostEnd > 0 {
+					host = string(data[userEnd+1 : userEnd+1+hostEnd])
+				} else {
+					client.WriteToUDP([]byte{0, 91, 0, 0, 0, 0, 0, 0}, srcAddr)
+					continue
+				}
+			} else {
+				if data[0] == VirtualAddrPrefix {
+					index := int(binary.BigEndian.Uint32(data[6:8]))
+					if index >= len(Nose) {
+						return
+					}
+					host = Nose[index]
+				} else {
+					host = net.IP(data[4:8]).String()
+				}
+			}
+
+			client.WriteToUDP([]byte{0, 90, data[2], data[3], data[4], data[5], data[6], data[7]}, srcAddr)
+		} else {
+			client.WriteToUDP([]byte{0, 91, 0, 0, 0, 0, 0, 0}, srcAddr)
+			continue
+		}
+
+		server := ConfigLookup(host)
+		if server.Option&OPT_QUIC == 0 {
+			continue
+		}
+
+		logPrintln(1, "Socks4U:", srcAddr, "->", host, port, server)
+
+		localConn, err := net.DialUDP("udp", nil, srcAddr)
+		if err != nil {
+			logPrintln(1, err)
+			continue
+		}
+
+		var remoteConn net.Conn = nil
+		var proxyConn net.Conn = nil
+		if server.Option&OPT_PROXY != 0 {
+			remoteAddress := net.JoinHostPort(host, strconv.Itoa(port))
+			remoteConn, proxyConn, err = server.DialProxyUDP(remoteAddress)
+		} else {
+			_, ips := NSLookup(host, server.Option, server.Server)
+			if ips == nil {
+				localConn.Close()
+				continue
+			}
+
+			raddr := net.UDPAddr{IP: ips[0], Port: port}
+			remoteConn, err = net.DialUDP("udp", nil, &raddr)
+		}
+
+		if err != nil {
+			logPrintln(1, err)
+			localConn.Close()
+			if proxyConn != nil {
+				proxyConn.Close()
+			}
+			continue
+		}
+
+		if server.Option&OPT_ZERO != 0 {
+			zero_data := make([]byte, 8+rand.Intn(1024))
+			_, err = remoteConn.Write(zero_data)
+			if err != nil {
+				logPrintln(1, err)
+				localConn.Close()
+				if proxyConn != nil {
+					proxyConn.Close()
+				}
+				continue
+			}
+		}
+
+		_, err = remoteConn.Write(data[:n])
+		if err != nil {
+			logPrintln(1, err)
+			localConn.Close()
+			if proxyConn != nil {
+				proxyConn.Close()
+			}
+			continue
+		}
+
+		go func(localConn, remoteConn, proxyConn net.Conn) {
+			relayUDP(localConn, remoteConn)
+			remoteConn.Close()
+			localConn.Close()
+			if proxyConn != nil {
+				proxyConn.Close()
+			}
+		}(localConn, remoteConn, proxyConn)
 	}
 }
