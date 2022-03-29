@@ -69,7 +69,7 @@ func SocksProxy(client net.Conn) {
 			reply = []byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0}
 		} else if b[0] == 0x04 {
 			if n > 8 && b[1] == 1 {
-				userEnd := bytes.IndexByte(b[:n], 0)
+				userEnd := 8 + bytes.IndexByte(b[8:n], 0)
 				port = int(binary.BigEndian.Uint16(b[2:4]))
 				if b[4]|b[5]|b[6] == 0 {
 					hostEnd := bytes.IndexByte(b[userEnd+1:n], 0)
@@ -213,11 +213,17 @@ func SocksProxy(client net.Conn) {
 					}
 
 					ip := addr.IP
-					result, ok := ACache.Load(ip.String())
+					result, ok := DNSCache.Load(ip.String())
 					var addresses []net.IP
 					if ok {
-						addresses = make([]net.IP, len(result.(DomainIP).Addresses))
-						copy(addresses, result.(DomainIP).Addresses)
+						records := result.(*DNSRecords)
+						if records.AAAA != nil {
+							addresses = make([]net.IP, len(records.AAAA.Addresses))
+							copy(addresses, records.AAAA.Addresses)
+						} else if records.A != nil {
+							addresses = make([]net.IP, len(records.A.Addresses))
+							copy(addresses, records.A.Addresses)
+						}
 					} else {
 						addresses = []net.IP{ip}
 					}
@@ -584,7 +590,7 @@ func QUICProxy(address string) {
 			SNI := GetQUICSNI(data[:n])
 			if SNI != "" {
 				server := ConfigLookup(SNI)
-				if server.Option&OPT_QUIC == 0 {
+				if server.Option&OPT_UDP == 0 {
 					continue
 				}
 				_, ips := NSLookup(SNI, server.Option, server.Server)
@@ -690,8 +696,13 @@ func Socks4UProxy(address string) {
 		}
 
 		server := ConfigLookup(host)
-		if server.Option&OPT_QUIC == 0 {
+		if server.Option&(OPT_UDP|OPT_HTTP3) == 0 {
 			continue
+		}
+		if server.Option&(OPT_HTTP3) != 0 {
+			if GetQUICVersion(data[:n]) == 0 {
+				continue
+			}
 		}
 
 		logPrintln(1, "Socks4U:", srcAddr, "->", host, port, server)

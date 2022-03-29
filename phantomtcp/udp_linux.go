@@ -53,8 +53,13 @@ func TProxyUDP(address string) {
 		}
 
 		server := ConfigLookup(host)
-		if server.Option&OPT_QUIC == 0 {
+		if server.Option&(OPT_UDP|OPT_HTTP3) == 0 {
 			continue
+		}
+		if server.Option&(OPT_HTTP3) != 0 {
+			if GetQUICVersion(data[:n]) == 0 {
+				continue
+			}
 		}
 
 		logPrintln(1, "TProxy(UDP):", srcAddr, "->", host, dstAddr.Port, server)

@@ -42,19 +42,20 @@ const (
 	OPT_WSEQ  = 0x1 << 6
 	OPT_WTIME = 0x1 << 7
 
-	OPT_TFO  = 0x1 << 8
-	OPT_QUIC = 0x1 << 9
+	OPT_TFO   = 0x1 << 8
+	OPT_UDP   = 0x1 << 9
+	OPT_HTTP3 = 0x1 << 10
 
-	OPT_MODE2     = 0x1 << 10
-	OPT_DF        = 0x1 << 11
-	OPT_SAT       = 0x1 << 12
-	OPT_RAND      = 0x1 << 13
-	OPT_SSEG      = 0x1 << 14
-	OPT_1SEG      = 0x1 << 15
-	OPT_HTFO      = 0x1 << 16
-	OPT_KEEPALIVE = 0x1 << 17
-	OPT_SYNX2     = 0x1 << 18
-	OPT_ZERO      = 0x1 << 19
+	OPT_MODE2     = 0x1 << 11
+	OPT_DF        = 0x1 << 12
+	OPT_SAT       = 0x1 << 13
+	OPT_RAND      = 0x1 << 14
+	OPT_SSEG      = 0x1 << 15
+	OPT_1SEG      = 0x1 << 16
+	OPT_HTFO      = 0x1 << 17
+	OPT_KEEPALIVE = 0x1 << 18
+	OPT_SYNX2     = 0x1 << 19
+	OPT_ZERO      = 0x1 << 20
 
 	OPT_HTTP     = 0x1 << 23
 	OPT_HTTPS    = 0x1 << 24
@@ -80,8 +81,9 @@ var MethodMap = map[string]uint32{
 	"w-seq":  OPT_WSEQ,
 	"w-time": OPT_WTIME,
 
-	"tfo":  OPT_TFO,
-	"quic": OPT_QUIC,
+	"tfo": OPT_TFO,
+	"udp": OPT_UDP,
+	"h3":  OPT_HTTP3,
 
 	"mode2":      OPT_MODE2,
 	"df":         OPT_DF,
@@ -506,31 +508,23 @@ func LoadConfig(filename string) error {
 						go UDPMapping(mapping[0], mapping[1])
 					} else {
 						ip := net.ParseIP(keys[0])
-						var RecordA DomainIP
-						var RecordAAAA DomainIP
+						var records *DNSRecords
 						if strings.HasPrefix(keys[1], "[") {
-							result, hasACache := ACache.Load(keys[1][1 : len(keys[1])-1])
-							if hasACache {
-								RecordA = result.(DomainIP)
-							}
-
-							result, hasAAAACache := AAAACache.Load(keys[1][1 : len(keys[1])-1])
-							if hasAAAACache {
-								RecordAAAA = result.(DomainIP)
-							}
-
-							if !(hasACache || hasAAAACache) {
+							result, hasCache := DNSCache.Load(keys[1][1 : len(keys[1])-1])
+							if hasCache {
+								records = result.(*DNSRecords)
+							} else {
 								DomainMap[keys[0]] = CurrentServer
 								return nil
 							}
 						} else {
-							index := 0
+							records = new(DNSRecords)
 							if option != 0 {
-								index = len(Nose)
+								records.Index = len(Nose)
+								records.Hint = uint(option)
 								Nose = append(Nose, keys[0])
 							}
-							RecordA.Index = index
-							RecordAAAA.Index = index
+
 							ips := strings.Split(keys[1], ",")
 							for i := 0; i < len(ips); i++ {
 								ip := net.ParseIP(ips[i])
@@ -539,30 +533,25 @@ func LoadConfig(filename string) error {
 								}
 								ip4 := ip.To4()
 								if ip4 != nil {
-									RecordA.Addresses = append(RecordA.Addresses, ip4)
+									if records.A == nil {
+										records.A = new(RecordAddresses)
+									}
+									records.A.Addresses = append(records.A.Addresses, ip4)
 								} else {
-									RecordAAAA.Addresses = append(RecordAAAA.Addresses, ip)
+									if records.AAAA == nil {
+										records.AAAA = new(RecordAddresses)
+									}
+									records.AAAA.Addresses = append(records.AAAA.Addresses, ip)
 								}
 							}
 						}
 
 						if ip == nil {
 							DomainMap[keys[0]] = CurrentServer
-							ACache.Store(keys[0], RecordA)
-							AAAACache.Store(keys[0], RecordAAAA)
-							if option&OPT_HTTPS != 0 {
-								if option&OPT_IPV6 == 0 {
-									HTTPSCache.Store(keys[0], RecordA)
-								} else {
-									HTTPSCache.Store(keys[0], RecordAAAA)
-								}
-							} else {
-								HTTPSCache.Store(keys[0], DomainIP{0, 0, nil})
-							}
+							DNSCache.Store(keys[0], records)
 						} else {
 							DomainMap[ip.String()] = CurrentServer
-							ACache.Store(ip.String(), RecordA)
-							AAAACache.Store(ip.String(), RecordAAAA)
+							DNSCache.Store(ip.String(), records)
 						}
 					}
 				} else {
@@ -616,12 +605,10 @@ func LoadHosts(filename string) error {
 
 		k := strings.SplitN(string(line), "\t", 2)
 		if len(k) == 2 {
+			var records *DNSRecords
+
 			name := k[1]
-			_, ok := ACache.Load(name)
-			if ok {
-				continue
-			}
-			_, ok = AAAACache.Load(name)
+			_, ok := DNSCache.Load(name)
 			if ok {
 				continue
 			}
@@ -632,23 +619,20 @@ func LoadHosts(filename string) error {
 					break
 				}
 				offset += off
-				result, ok := ACache.Load(name[offset:])
+				result, ok := DNSCache.Load(name[offset:])
 				if ok {
-					ACache.Store(name, result.(DomainIP))
-					continue
-				}
-				result, ok = AAAACache.Load(name[offset:])
-				if ok {
-					AAAACache.Store(name, result.(DomainIP))
+					records = new(DNSRecords)
+					*records = *result.(*DNSRecords)
+					DNSCache.Store(name, records)
 					continue
 				}
 				offset++
 			}
 
 			server := ConfigLookup(name)
-			index := 0
 			if ok && server.Option != 0 {
-				index = len(Nose)
+				records.Index = len(Nose)
+				records.Hint = uint(server.Option)
 				Nose = append(Nose, name)
 			}
 			ip := net.ParseIP(k[0])
@@ -658,11 +642,9 @@ func LoadHosts(filename string) error {
 			}
 			ip4 := ip.To4()
 			if ip4 != nil {
-				ACache.Store(name, DomainIP{index, 0, []net.IP{ip4}})
-				AAAACache.Store(name, DomainIP{0, 0, nil})
+				records.A = &RecordAddresses{0x7FFFFFFFFFFFFFFF, []net.IP{ip4}}
 			} else {
-				AAAACache.Store(name, DomainIP{index, 0, []net.IP{ip}})
-				ACache.Store(name, DomainIP{0, 0, nil})
+				records.AAAA = &RecordAddresses{0x7FFFFFFFFFFFFFFF, []net.IP{ip}}
 			}
 		}
 	}

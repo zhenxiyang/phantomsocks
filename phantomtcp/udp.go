@@ -241,3 +241,21 @@ func (server *PhantomServer) DialProxyUDP(address string) (net.Conn, net.Conn, e
 
 	return nil, nil, proxy_err
 }
+
+func GetQUICVersion(data []byte) uint32 {
+	if len(data) < 5 {
+		return 0xffffffff
+	}
+	if data[0]&0xC0 != 0xC0 {
+		return 0xffffffff
+	}
+	Version := binary.BigEndian.Uint32(data[1:5])
+	switch Version {
+	case 0xff00001d:
+		return Version
+	case 0x00000001:
+		return Version
+	default:
+		return 0
+	}
+}
