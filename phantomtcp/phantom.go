@@ -45,17 +45,18 @@ const (
 	OPT_TFO   = 0x1 << 8
 	OPT_UDP   = 0x1 << 9
 	OPT_HTTP3 = 0x1 << 10
+	OPT_NOTCP = 0x1 << 11
 
-	OPT_MODE2     = 0x1 << 11
-	OPT_DF        = 0x1 << 12
-	OPT_SAT       = 0x1 << 13
-	OPT_RAND      = 0x1 << 14
-	OPT_SSEG      = 0x1 << 15
-	OPT_1SEG      = 0x1 << 16
-	OPT_HTFO      = 0x1 << 17
-	OPT_KEEPALIVE = 0x1 << 18
-	OPT_SYNX2     = 0x1 << 19
-	OPT_ZERO      = 0x1 << 20
+	OPT_MODE2     = 0x1 << 12
+	OPT_DF        = 0x1 << 13
+	OPT_SAT       = 0x1 << 14
+	OPT_RAND      = 0x1 << 15
+	OPT_SSEG      = 0x1 << 16
+	OPT_1SEG      = 0x1 << 17
+	OPT_HTFO      = 0x1 << 18
+	OPT_KEEPALIVE = 0x1 << 19
+	OPT_SYNX2     = 0x1 << 20
+	OPT_ZERO      = 0x1 << 21
 
 	OPT_HTTP     = 0x1 << 23
 	OPT_HTTPS    = 0x1 << 24
@@ -81,9 +82,10 @@ var MethodMap = map[string]uint32{
 	"w-seq":  OPT_WSEQ,
 	"w-time": OPT_WTIME,
 
-	"tfo": OPT_TFO,
-	"udp": OPT_UDP,
-	"h3":  OPT_HTTP3,
+	"tfo":    OPT_TFO,
+	"udp":    OPT_UDP,
+	"h3":     OPT_HTTP3,
+	"no-tcp": OPT_NOTCP,
 
 	"mode2":      OPT_MODE2,
 	"df":         OPT_DF,
@@ -299,7 +301,7 @@ func HttpMove(conn net.Conn, host string, b []byte) bool {
 	if host == "" {
 		copy(data[:], []byte("HTTP/1.1 200 OK"))
 		n += 15
-	} else if host == "https" {
+	} else if host == "https" || host == "h3" {
 		copy(data[:], []byte("HTTP/1.1 302 Found\r\nLocation: https://"))
 		n += 38
 
@@ -345,8 +347,20 @@ func HttpMove(conn net.Conn, host string, b []byte) bool {
 		n += end - start
 	}
 
-	copy(data[n:], []byte("\r\nCache-Control: private\r\nServer: pinocchio\r\nContent-Length: 0\r\n\r\n"))
-	n += 66
+	cache_control := []byte("\r\nCache-Control: private")
+	copy(data[n:], cache_control)
+	n += len(cache_control)
+
+	if host == "h3" {
+		alt_svc := []byte("\r\nAlt-Svc: h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000; persist=1")
+		copy(data[n:], alt_svc)
+		n += len(alt_svc)
+	}
+
+	content_length := []byte("\r\nContent-Length: 0\r\n\r\n")
+	copy(data[n:], content_length)
+	n += len(content_length)
+
 	conn.Write(data[:n])
 	return true
 }

@@ -137,7 +137,10 @@ func SocksProxy(client net.Conn) {
 				}
 
 				if b[0] != 0x16 {
-					if server.Option&OPT_HTTPS != 0 {
+					if server.Option&OPT_HTTP3 != 0 {
+						HttpMove(client, "h3", b[:n])
+						return
+					} else if server.Option&OPT_HTTPS != 0 {
 						HttpMove(client, "https", b[:n])
 						return
 					} else if server.Option&OPT_MOVE != 0 {
@@ -354,7 +357,10 @@ func SNIProxy(client net.Conn) {
 					return
 				}
 			} else {
-				if server.Option&OPT_HTTPS != 0 {
+				if server.Option&OPT_HTTP3 != 0 {
+					HttpMove(client, "h3", b[:n])
+					return
+				} else if server.Option&OPT_HTTPS != 0 {
 					HttpMove(client, "https", b[:n])
 					return
 				} else if server.Option&OPT_MOVE != 0 {
@@ -450,6 +456,10 @@ func RedirectProxy(client net.Conn) {
 		port = addr.Port
 
 		server := ConfigLookup(host)
+		if server.Option&OPT_NOTCP != 0 {
+			return
+		}
+
 		if server.Option != 0 {
 			if server.Option&OPT_PROXY == 0 {
 				if ips == nil {
@@ -483,7 +493,10 @@ func RedirectProxy(client net.Conn) {
 					}
 				} else {
 					logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
-					if server.Option&OPT_HTTPS != 0 {
+					if server.Option&OPT_HTTP3 != 0 {
+						HttpMove(client, "h3", b[:n])
+						return
+					} else if server.Option&OPT_HTTPS != 0 {
 						HttpMove(client, "https", b[:n])
 						return
 					} else if server.Option&OPT_MOVE != 0 {

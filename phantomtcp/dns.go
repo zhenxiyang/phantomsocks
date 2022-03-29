@@ -947,7 +947,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		if records.AAAA != nil {
 			return records.BuildResponse(request, qtype, 0)
 		}
-	case 65:
+	default:
 		return records.BuildResponse(request, qtype, 3600)
 	}
 
