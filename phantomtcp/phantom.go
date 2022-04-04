@@ -583,12 +583,7 @@ func LoadConfig(filename string) error {
 							} else {
 								DomainMap[keys[0]] = CurrentServer
 								records := new(DNSRecords)
-								if keys[0][0] != '.' && option != 0 {
-									records.Index = len(Nose)
-									records.Hint = uint(option)
-									Nose = append(Nose, keys[0])
-								}
-								DNSCache.Store(ip.String(), records)
+								DNSCache.Store(keys[0], records)
 							}
 						}
 					}
