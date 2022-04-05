@@ -34,15 +34,13 @@ func connectionMonitor(device string, ipv6 bool) {
 			logPrintln(1, "no IPv6 on", device)
 			return
 		}
-		netaddr, _ := net.ResolveIPAddr("ip6", localaddr.IP.String())
-		handle, err = net.ListenIP("ip6:tcp", netaddr)
+		handle, err = net.ListenIP("ip6:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
 	} else {
 		if localaddr == nil {
 			logPrintln(1, "no IPv4 on", device)
 			return
 		}
-		netaddr, _ := net.ResolveIPAddr("ip4", localaddr.IP.String())
-		handle, err = net.ListenIP("ip4:tcp", netaddr)
+		handle, err = net.ListenIP("ip4:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
 	}
 
 	if err != nil {
@@ -58,14 +56,12 @@ func connectionMonitor(device string, ipv6 bool) {
 			logPrintln(1, err)
 			continue
 		}
-
-		var tcp layers.TCP
-
-		tcp.DecodeFromBytes(buf[:n], nil)
-
-		if tcp.SYN != true {
+		if buf[13] != 18 {
 			continue
 		}
+
+		var tcp layers.TCP
+		tcp.DecodeFromBytes(buf[:n], nil)
 		srcPort := tcp.DstPort
 		synAddr := net.JoinHostPort(addr.String(), strconv.Itoa(int(tcp.SrcPort)))
 		_, ok := ConnSyn.Load(synAddr)
@@ -132,6 +128,61 @@ func connectionMonitor(device string, ipv6 bool) {
 
 				buf = make([]byte, 1500)
 			}
+		}
+	}
+}
+
+func ICMPMonitor(device string, ipv6 bool) {
+	fmt.Printf("Device: %v\n", device)
+
+	var err error
+	localaddr, err := GetLocalAddr(device, ipv6)
+	if err != nil {
+		logPrintln(1, err)
+		return
+	}
+
+	var handle *net.IPConn
+	if ipv6 {
+		if localaddr == nil {
+			logPrintln(1, "no IPv6 on", device)
+			return
+		}
+		handle, err = net.ListenIP("ip6:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
+	} else {
+		if localaddr == nil {
+			logPrintln(1, "no IPv4 on", device)
+			return
+		}
+		handle, err = net.ListenIP("ip6:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
+	}
+
+	if err != nil {
+		fmt.Printf("sockraw open failed: %v", err)
+		return
+	}
+	defer handle.Close()
+
+	buf := make([]byte, 1500)
+	for {
+		n, _, err := handle.ReadFrom(buf)
+		if err != nil {
+			logPrintln(1, err)
+			continue
+		}
+
+		if ipv6 {
+			var icmp layers.ICMPv6
+			icmp.DecodeFromBytes(buf[:n], nil)
+			var ip layers.IPv6
+			ip.DecodeFromBytes(icmp.Payload, nil)
+			logPrintln(1, ip.NextLayerType())
+		} else {
+			var icmp layers.ICMPv4
+			icmp.DecodeFromBytes(buf[:n], nil)
+			var ip layers.IPv4
+			ip.DecodeFromBytes(icmp.Payload, nil)
+			logPrintln(1, ip.Protocol)
 		}
 	}
 }
