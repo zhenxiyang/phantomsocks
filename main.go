@@ -134,6 +134,7 @@ var StartFlags struct {
 	VirtualAddrPrefix int    `json:"vaddrprefix,omitempty"`
 	LogLevel          int    `json:"log,omitempty"`
 	MaxProcs          int    `json:"maxprocs,omitempty"`
+	PassiveMode       bool   `json:"maxprocs,omitempty"`
 }
 
 func StartService() {
@@ -165,6 +166,8 @@ func StartService() {
 	}
 
 	devices := strings.Split(StartFlags.Device, ",")
+	ptcp.LogLevel = StartFlags.LogLevel
+	ptcp.PassiveMode = StartFlags.PassiveMode
 	ptcp.ConnectionMonitor(devices)
 
 	if StartFlags.UDPDevice != "" {
@@ -174,7 +177,6 @@ func StartService() {
 		}
 	}
 
-	ptcp.LogLevel = StartFlags.LogLevel
 	ptcp.Init()
 
 	for _, filename := range strings.Split(StartFlags.ConfigFiles, ",") {
@@ -290,6 +292,7 @@ func main() {
 		flag.IntVar(&StartFlags.VirtualAddrPrefix, "vaddrprefix", 0, "VirtualAddressPrefix")
 		flag.IntVar(&StartFlags.LogLevel, "log", 0, "LogLevel")
 		flag.IntVar(&StartFlags.MaxProcs, "maxprocs", 0, "LogLevel")
+		flag.BoolVar(&StartFlags.PassiveMode, "passive", false, "PassiveMode")
 		flag.BoolVar(&flagServiceInstall, "install", false, "Install service")
 		flag.BoolVar(&flagServiceRemove, "remove", false, "Remove service")
 		flag.BoolVar(&flagServiceStart, "start", false, "Start service")

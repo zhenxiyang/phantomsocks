@@ -148,13 +148,13 @@ func ICMPMonitor(device string, ipv6 bool) {
 			logPrintln(1, "no IPv6 on", device)
 			return
 		}
-		handle, err = net.ListenIP("ip6:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
+		handle, err = net.ListenIP("ip6:icmp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
 	} else {
 		if localaddr == nil {
 			logPrintln(1, "no IPv4 on", device)
 			return
 		}
-		handle, err = net.ListenIP("ip6:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
+		handle, err = net.ListenIP("ip4:icmp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
 	}
 
 	if err != nil {
@@ -163,26 +163,56 @@ func ICMPMonitor(device string, ipv6 bool) {
 	}
 	defer handle.Close()
 
-	buf := make([]byte, 1500)
+	var connInfo ConnectionInfo
+	data := make([]byte, 1500)
+	fakepayload := make([]byte, 1024)
+	df := gopacket.NilDecodeFeedback
 	for {
-		n, _, err := handle.ReadFrom(buf)
+		n, _, err := handle.ReadFrom(data)
 		if err != nil {
 			logPrintln(1, err)
+			continue
+		}
+		if len(data) < 8 || !(data[0] == 11 && data[1] == 0) {
 			continue
 		}
 
 		if ipv6 {
 			var icmp layers.ICMPv6
-			icmp.DecodeFromBytes(buf[:n], nil)
+			icmp.DecodeFromBytes(data[:n], df)
 			var ip layers.IPv6
-			ip.DecodeFromBytes(icmp.Payload, nil)
-			logPrintln(1, ip.NextLayerType())
+			if ip.DecodeFromBytes(icmp.Payload, df) == nil && ip.NextHeader == layers.IPProtocolTCP && ip.TrafficClass > 0 {
+				var tcp layers.TCP
+				if tcp.DecodeFromBytes(ip.Payload, df) == nil {
+					ip.TrafficClass = 0
+					connInfo.IP = &ip
+					connInfo.TCP = tcp
+					ttl := uint8(64)
+					if ip.TrafficClass > 4 {
+						ttl = ip.TrafficClass >> 2
+					}
+					ModifyAndSendPacket(&connInfo, fakepayload, OPT_TTL|OPT_WMD5, ttl, 2)
+					ModifyAndSendPacket(&connInfo, connInfo.TCP.Payload, OPT_TTL, 64, 1)
+				}
+			}
 		} else {
 			var icmp layers.ICMPv4
-			icmp.DecodeFromBytes(buf[:n], nil)
+			icmp.DecodeFromBytes(data[:n], df)
 			var ip layers.IPv4
-			ip.DecodeFromBytes(icmp.Payload, nil)
-			logPrintln(1, ip.Protocol)
+			if ip.DecodeFromBytes(icmp.Payload, df) == nil && ip.Protocol == layers.IPProtocolTCP && ip.TOS > 0 {
+				var tcp layers.TCP
+				if tcp.DecodeFromBytes(ip.Payload, df) == nil {
+					ip.TOS = 0
+					connInfo.IP = &ip
+					connInfo.TCP = tcp
+					ttl := uint8(64)
+					if ip.TOS > 4 {
+						ttl = ip.TOS >> 2
+					}
+					ModifyAndSendPacket(&connInfo, fakepayload, OPT_TTL|OPT_WMD5, ttl, 2)
+					ModifyAndSendPacket(&connInfo, connInfo.TCP.Payload, OPT_TTL, 64, 1)
+				}
+			}
 		}
 	}
 }
@@ -193,14 +223,20 @@ func ConnectionMonitor(devices []string) bool {
 		return false
 	}
 
-	for i := 0; i < 65536; i++ {
-		ConnInfo4[i] = make(chan *ConnectionInfo)
-		ConnInfo6[i] = make(chan *ConnectionInfo)
-	}
+	if PassiveMode {
+		for i := 0; i < len(devices); i++ {
+			go ICMPMonitor(devices[i], false)
+		}
+	} else {
+		for i := 0; i < 65536; i++ {
+			ConnInfo4[i] = make(chan *ConnectionInfo)
+			ConnInfo6[i] = make(chan *ConnectionInfo)
+		}
 
-	for i := 0; i < len(devices); i++ {
-		go connectionMonitor(devices[i], true)
-		go connectionMonitor(devices[i], false)
+		for i := 0; i < len(devices); i++ {
+			go connectionMonitor(devices[i], false)
+			go connectionMonitor(devices[i], true)
+		}
 	}
 
 	return true

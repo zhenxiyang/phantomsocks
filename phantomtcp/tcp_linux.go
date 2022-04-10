@@ -151,3 +151,45 @@ func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 		return &TCPAddr, nil
 	}
 }
+
+func SendWithOption(conn net.Conn, payload []byte, tos int, ttl int) error {
+	f, err := conn.(*net.TCPConn).File()
+	if err != nil {
+		return err
+	}
+	fd := int(f.Fd())
+	if tos != 0 {
+		err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TOS, tos)
+		if err != nil {
+			return err
+		}
+	}
+
+	if ttl != 0 {
+		err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, ttl)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err = conn.Write(payload)
+	if err != nil {
+		return err
+	}
+
+	if tos != 0 {
+		err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TOS, 0)
+		if err != nil {
+			return err
+		}
+	}
+
+	if ttl != 0 {
+		err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TTL, 64)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

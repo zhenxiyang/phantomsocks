@@ -13,6 +13,8 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
+var ConnWait4 [65536]uint32
+var ConnWait6 [65536]uint32
 var pcapHandle *pcap.Handle
 
 func DevicePrint() {

@@ -29,6 +29,7 @@ var DefaultServer *PhantomServer = nil
 var SubdomainDepth = 2
 var LogLevel = 0
 var Forward bool = false
+var PassiveMode = false
 
 const (
 	OPT_NONE = 0x0

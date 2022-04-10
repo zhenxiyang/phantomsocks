@@ -54,3 +54,7 @@ func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 
 	return LocalTCPAddr, err
 }
+
+func SendWithOption(conn net.Conn, payload []byte, tos, ttl int) error {
+	return nil
+}

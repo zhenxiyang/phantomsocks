@@ -16,6 +16,8 @@ import (
 	"github.com/macronut/godivert"
 )
 
+var ConnWait4 [65536]uint32
+var ConnWait6 [65536]uint32
 var winDivertLock sync.Mutex
 var winDivert *godivert.WinDivertHandle
 
@@ -514,7 +516,8 @@ func RedirectDNS() {
 		}
 		udpheadlen := 8
 		request := packet.Raw[ipheadlen+udpheadlen:]
-		qname, qtype, _ := GetQName(request)
+
+		qname, _, _ := GetQName(request)
 		if qname == "" {
 			logPrintln(2, "DNS Segmentation fault")
 			continue
@@ -523,18 +526,7 @@ func RedirectDNS() {
 		server := ConfigLookup(qname)
 		if server != nil {
 			logPrintln(1, qname, server)
-			var response []byte
-			if (server.Option & OPT_MODIFY) != 0 {
-				index, _ := NSLookup(qname, server.Option, server.Server)
-				if qtype == 28 {
-					response = BuildResponse(request, qtype, 0, nil)
-				} else {
-					response = BuildLie(request, qtype, index)
-				}
-			} else {
-				response = NSRequest(request, true)
-			}
-
+			response := NSRequest(request, true)
 			udpsize := len(response) + 8
 
 			var packetsize int

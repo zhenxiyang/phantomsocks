@@ -34,8 +34,6 @@ type SynInfo struct {
 var ConnSyn sync.Map
 var ConnInfo4 [65536]chan *ConnectionInfo
 var ConnInfo6 [65536]chan *ConnectionInfo
-var ConnWait4 [65536]uint32
-var ConnWait6 [65536]uint32
 var TFOCookies sync.Map
 var TFOPayload [64][]byte
 var TFOSynID uint8 = 0
@@ -169,7 +167,48 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 		}
 	}
 
-	if length > 0 {
+	if PassiveMode || length == 0 {
+		ip := addresses[rand.Intn(len(addresses))]
+
+		var laddr *net.TCPAddr = nil
+		if device != "" {
+			laddr, err = GetLocalAddr(device, ip.To4() == nil)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
+		conn, err = net.DialTCP("tcp", laddr, raddr)
+		if err != nil {
+			return nil, err
+		}
+
+		if b != nil {
+			if length > 0 {
+				cut := offset + length/2
+				tos := 1 << 2
+				if server.Option&OPT_TTL != 0 {
+					tos = int(server.TTL) << 2
+				}
+				err = SendWithOption(conn, b[:cut], tos, 1)
+				if err != nil {
+					conn.Close()
+				}
+				_, err = conn.Write(b[cut:])
+				if err != nil {
+					conn.Close()
+				}
+			} else {
+				_, err = conn.Write(b)
+				if err != nil {
+					conn.Close()
+				}
+			}
+		}
+
+		return conn, err
+	} else {
 		rand.Seed(time.Now().UnixNano())
 
 		fakepaylen := 1280
@@ -308,31 +347,6 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 					return nil, err
 				}
 				err = ModifyAndSendPacket(synpacket, fakepayload, server.Option, server.TTL, 2)
-			}
-		}
-
-		return conn, err
-	} else {
-		ip := addresses[rand.Intn(len(addresses))]
-
-		var laddr *net.TCPAddr = nil
-		if device != "" {
-			laddr, err = GetLocalAddr(device, ip.To4() == nil)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-		conn, err = net.DialTCP("tcp", laddr, raddr)
-		if err != nil {
-			return nil, err
-		}
-
-		if b != nil {
-			_, err = conn.Write(b)
-			if err != nil {
-				conn.Close()
 			}
 		}
 
