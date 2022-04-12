@@ -157,6 +157,7 @@ func SendWithOption(conn net.Conn, payload []byte, tos int, ttl int) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	fd := int(f.Fd())
 	if tos != 0 {
 		err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_TOS, tos)
