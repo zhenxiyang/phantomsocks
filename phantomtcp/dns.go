@@ -230,28 +230,26 @@ func TLSlookup(request []byte, address string) ([]byte, error) {
 	return data[2:recvlen], nil
 }
 
-func HTTPSlookup(request []byte, u *url.URL, host string) ([]byte, error) {
+func HTTPSlookup(request []byte, u *url.URL, domain string) ([]byte, error) {
 	address := u.Host
-	serverName, _, err := net.SplitHostPort(address)
+	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		serverName = address
+		host = address
+		port = "443"
 		address += ":443"
 	}
 
-	path := u.Path
-	if path == "" {
-		path = "/dns-query"
+	if domain == "" {
+		domain = host
 	}
-
-	if net.ParseIP(serverName) != nil {
-		serverName = host
-	} else if host == "" {
-		host = serverName
+	path := u.Path
+	if port != "443" {
+		host = address
 	}
 
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
-		ServerName:         serverName,
+		ServerName:         domain,
 	}
 	conn, err := tls.Dial("tcp", address, conf)
 	if err != nil {
@@ -670,10 +668,10 @@ func PackQName(name string) []byte {
 }
 
 type ServerOptions struct {
-	ECS  string
-	Type string
-	PD   string
-	Host string
+	ECS    string
+	Type   string
+	PD     string
+	Domain string
 }
 
 func ParseOptions(options string) ServerOptions {
@@ -689,8 +687,8 @@ func ParseOptions(options string) ServerOptions {
 				serverOpts.PD = key[1]
 			case "type":
 				serverOpts.Type = key[1]
-			case "host":
-				serverOpts.Host = key[1]
+			case "domain":
+				serverOpts.Domain = key[1]
 			}
 		}
 	}
@@ -857,7 +855,7 @@ func NSLookup(name string, hint uint32, server string) (int, []net.IP) {
 			response, err = TLSlookup(request, u.Host)
 		case "https":
 			request = PackRequest(name, qtype, uint16(0), options.ECS)
-			response, err = HTTPSlookup(request, u, options.Host)
+			response, err = HTTPSlookup(request, u, options.Domain)
 		case "tfo":
 			request = PackRequest(name, qtype, uint16(0), options.ECS)
 			response, err = TFOlookup(request, u.Host)
@@ -1005,7 +1003,7 @@ func NSRequest(request []byte, cache bool) []byte {
 	case "tls":
 		response, err = TLSlookup(request, u.Host)
 	case "https":
-		response, err = HTTPSlookup(request, u, options.Host)
+		response, err = HTTPSlookup(request, u, options.Domain)
 	case "tfo":
 		response, err = TFOlookup(request, u.Host)
 	default:
