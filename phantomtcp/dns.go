@@ -318,7 +318,7 @@ func TFOlookup(request []byte, address string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, _, err = DialConnInfo(nil, addr, &PhantomServer{OPT_TFO, 2, 0, 0, "", ""}, data[:len(request)+2])
+	conn, _, err = DialConnInfo(nil, addr, &PhantomServer{OPT_TFO, 2, 0, 0, "", "", ""}, data[:len(request)+2])
 	if err != nil {
 		return nil, err
 	}
@@ -957,7 +957,7 @@ func NSRequest(request []byte, cache bool) []byte {
 	serverAddr := ""
 	if server != nil {
 		records.Hint = uint(server.Option)
-		logPrintln(2, "request:", name, server.Server)
+		logPrintln(2, "request:", name, server.Server, server.Proxy)
 		serverAddr = server.Server
 	} else {
 		records.Hint = uint(DefaultServer.Option)
@@ -966,6 +966,12 @@ func NSRequest(request []byte, cache bool) []byte {
 	}
 
 	if serverAddr == "" {
+		if records.Index == 0 && server.Proxy != "" {
+			NoseLock.Lock()
+			records.Index = len(Nose)
+			Nose = append(Nose, name)
+			NoseLock.Unlock()
+		}
 		return records.BuildResponse(request, qtype, 3600)
 	}
 
@@ -1007,13 +1013,6 @@ func NSRequest(request []byte, cache bool) []byte {
 	case "tfo":
 		response, err = TFOlookup(request, u.Host)
 	default:
-		if records.Hint != 0 {
-			NoseLock.Lock()
-			records.Index = len(Nose)
-			Nose = append(Nose, name)
-			NoseLock.Unlock()
-			return records.BuildResponse(request, qtype, 0)
-		}
 		logPrintln(1, "unknown protocol")
 		return nil
 	}
@@ -1023,7 +1022,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		return nil
 	}
 
-	if records.Index == 0 && records.Hint != 0 {
+	if records.Index == 0 && (records.Hint != 0 || server.Proxy != "") {
 		NoseLock.Lock()
 		records.Index = len(Nose)
 		Nose = append(Nose, name)

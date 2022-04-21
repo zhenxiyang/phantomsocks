@@ -117,7 +117,7 @@ func SocksProxy(client net.Conn) {
 					return
 				}
 				_, err = client.Write(reply)
-			} else if server.Option&OPT_PROXY == 0 {
+			} else if server.Proxy == "" {
 				logPrintln(1, "Socks:", host, port, server)
 				_, ips := NSLookup(host, server.Option, server.Server)
 				if len(ips) == 0 {
@@ -460,16 +460,16 @@ func RedirectProxy(client net.Conn) {
 			return
 		}
 
-		if server.Option != 0 {
-			if server.Option&OPT_PROXY == 0 {
-				if ips == nil {
-					_, ips = NSLookup(host, server.Option, server.Server)
-					if len(ips) == 0 {
-						logPrintln(1, host, "no such host")
-						return
-					}
-				}
+		if server.Proxy != "" {
+			logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, server)
 
+			if server.Option == OPT_NONE {
+				conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
+				if err != nil {
+					logPrintln(1, host, err)
+					return
+				}
+			} else {
 				var b [1500]byte
 				n, err := client.Read(b[:])
 				if err != nil {
@@ -477,78 +477,76 @@ func RedirectProxy(client net.Conn) {
 					return
 				}
 
-				if b[0] == 0x16 {
-					offset, length := GetSNI(b[:n])
-					if length > 0 {
-						host = string(b[offset : offset+length])
-						server = ConfigLookup(host)
-					}
+				conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), b[:n])
+				if err != nil {
+					logPrintln(1, err)
+					return
+				}
+			}
+		} else if server.Option != 0 {
+			if ips == nil {
+				_, ips = NSLookup(host, server.Option, server.Server)
+				if len(ips) == 0 {
+					logPrintln(1, host, "no such host")
+					return
+				}
+			}
 
-					logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
+			var b [1500]byte
+			n, err := client.Read(b[:])
+			if err != nil {
+				logPrintln(1, err)
+				return
+			}
 
-					conn, err = server.Dial(ips, port, b[:n])
-					if err != nil {
-						logPrintln(1, host, err)
-						return
-					}
-				} else {
-					logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
-					if server.Option&OPT_HTTP3 != 0 {
-						HttpMove(client, "h3", b[:n])
-						return
-					} else if server.Option&OPT_HTTPS != 0 {
-						HttpMove(client, "https", b[:n])
-						return
-					} else if server.Option&OPT_MOVE != 0 {
-						HttpMove(client, server.Server, b[:n])
-						return
-					} else if server.Option&OPT_STRIP != 0 {
-						ip := ips[rand.Intn(len(ips))]
-						if server.Option&OPT_FRONTING != 0 {
-							host = ""
-						}
-						conn, err = DialStrip(ip.String(), host)
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-						_, err = conn.Write(b[:n])
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-					} else {
-						conn, err = server.HTTP(client, ips, port, b[:n])
-						if err != nil {
-							logPrintln(1, err)
-							return
-						}
-						io.Copy(client, conn)
-						return
-					}
+			if b[0] == 0x16 {
+				offset, length := GetSNI(b[:n])
+				if length > 0 {
+					host = string(b[offset : offset+length])
+					server = ConfigLookup(host)
+				}
+
+				logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
+
+				conn, err = server.Dial(ips, port, b[:n])
+				if err != nil {
+					logPrintln(1, host, err)
+					return
 				}
 			} else {
-				logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, server)
-
-				if server.Option == OPT_PROXY {
-					conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
+				logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
+				if server.Option&OPT_HTTP3 != 0 {
+					HttpMove(client, "h3", b[:n])
+					return
+				} else if server.Option&OPT_HTTPS != 0 {
+					HttpMove(client, "https", b[:n])
+					return
+				} else if server.Option&OPT_MOVE != 0 {
+					HttpMove(client, server.Server, b[:n])
+					return
+				} else if server.Option&OPT_STRIP != 0 {
+					ip := ips[rand.Intn(len(ips))]
+					if server.Option&OPT_FRONTING != 0 {
+						host = ""
+					}
+					conn, err = DialStrip(ip.String(), host)
 					if err != nil {
-						logPrintln(1, host, err)
+						logPrintln(1, err)
+						return
+					}
+					_, err = conn.Write(b[:n])
+					if err != nil {
+						logPrintln(1, err)
 						return
 					}
 				} else {
-					var b [1500]byte
-					n, err := client.Read(b[:])
+					conn, err = server.HTTP(client, ips, port, b[:n])
 					if err != nil {
 						logPrintln(1, err)
 						return
 					}
-
-					conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), b[:n])
-					if err != nil {
-						logPrintln(1, err)
-						return
-					}
+					io.Copy(client, conn)
+					return
 				}
 			}
 		} else if ips != nil {
@@ -728,7 +726,7 @@ func Socks4UProxy(address string) {
 
 		var remoteConn net.Conn = nil
 		var proxyConn net.Conn = nil
-		if server.Option&OPT_PROXY != 0 {
+		if server.Proxy != "" {
 			remoteAddress := net.JoinHostPort(host, strconv.Itoa(port))
 			remoteConn, proxyConn, err = server.DialProxyUDP(remoteAddress)
 		} else {

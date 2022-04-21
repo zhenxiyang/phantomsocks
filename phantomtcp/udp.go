@@ -81,7 +81,7 @@ func relayUDP(left, right net.Conn) error {
 func (server *PhantomServer) DialProxyUDP(address string) (net.Conn, net.Conn, error) {
 	var err error
 
-	u, err := url.Parse(server.Server)
+	u, err := url.Parse(server.Proxy)
 	if err != nil {
 		return nil, nil, err
 	}

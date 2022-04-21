@@ -20,6 +20,7 @@ type PhantomServer struct {
 	MAXTTL byte
 	MSS    uint16
 	Server string
+	Proxy  string
 	Device string
 }
 
@@ -66,7 +67,6 @@ const (
 	OPT_FRONTING = 0x1 << 27
 	OPT_IPV4     = 0x1 << 28
 	OPT_IPV6     = 0x1 << 29
-	OPT_PROXY    = 0x1 << 30
 )
 
 const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME
@@ -106,7 +106,6 @@ var MethodMap = map[string]uint32{
 	"fronting": OPT_FRONTING,
 	"ipv4":     OPT_IPV4,
 	"ipv6":     OPT_IPV6,
-	"proxy":    OPT_PROXY,
 }
 
 var Logger *log.Logger
@@ -419,9 +418,10 @@ func LoadConfig(filename string) error {
 	var maxTTL byte = 0
 	var syncMSS uint16 = 0
 	server := ""
+	proxy := ""
 	device := ""
 
-	var CurrentServer *PhantomServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+	var CurrentServer *PhantomServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 
 	for {
 		line, _, err := br.ReadLine()
@@ -436,8 +436,12 @@ func LoadConfig(filename string) error {
 				if len(keys) > 1 {
 					if keys[0] == "server" {
 						logPrintln(2, string(line))
-						server = keys[1]
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+						if keys[1] == "none" {
+							server = ""
+						} else {
+							server = keys[1]
+						}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 						if DefaultServer == nil {
 							DefaultServer = CurrentServer
 						}
@@ -450,7 +454,7 @@ func LoadConfig(filename string) error {
 						}
 						DNSMinTTL = uint32(ttl)
 
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 					} else if keys[0] == "method" {
 						logPrintln(2, string(line))
 
@@ -465,7 +469,7 @@ func LoadConfig(filename string) error {
 							}
 						}
 
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 					} else if keys[0] == "ttl" {
 						logPrintln(2, string(line))
 
@@ -476,7 +480,7 @@ func LoadConfig(filename string) error {
 						}
 						minTTL = byte(ttl)
 
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 					} else if keys[0] == "mss" {
 						logPrintln(2, string(line))
 
@@ -487,7 +491,7 @@ func LoadConfig(filename string) error {
 						}
 						syncMSS = uint16(mss)
 
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 					} else if keys[0] == "max-ttl" {
 						logPrintln(2, string(line))
 
@@ -498,7 +502,17 @@ func LoadConfig(filename string) error {
 						}
 						maxTTL = byte(ttl)
 
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
+					} else if keys[0] == "proxy" {
+						logPrintln(2, string(line))
+
+						if keys[1] == "direct" {
+							proxy = ""
+						} else {
+							proxy = keys[1]
+						}
+
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 					} else if keys[0] == "device" {
 						logPrintln(2, string(line))
 
@@ -508,7 +522,7 @@ func LoadConfig(filename string) error {
 							device = keys[1]
 						}
 
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, device}
+						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 					} else if keys[0] == "subdomain" {
 						SubdomainDepth, err = strconv.Atoi(keys[1])
 						if err != nil {
@@ -534,7 +548,7 @@ func LoadConfig(filename string) error {
 							}
 						} else {
 							records = new(DNSRecords)
-							if option != 0 {
+							if option != 0 || proxy != "" {
 								records.Index = len(Nose)
 								records.Hint = uint(option)
 								Nose = append(Nose, keys[0])

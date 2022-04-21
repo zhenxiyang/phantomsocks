@@ -511,7 +511,7 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 	var err error
 	var conn net.Conn
 
-	u, err := url.Parse(server.Server)
+	u, err := url.Parse(server.Proxy)
 	if err != nil {
 		return nil, err
 	}
@@ -699,12 +699,37 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 				return nil, proxy_err
 			}
 
-			copy(b[:], []byte{0x05, 0x01, 0x00, 0x03})
-			hostLen := len(host)
-			b[4] = byte(hostLen)
-			copy(b[5:], []byte(host))
-			binary.BigEndian.PutUint16(b[5+hostLen:], uint16(port))
-			n, err = conn.Write(b[:7+hostLen])
+			if server.Server != "" {
+				_, ips := NSLookup(host, server.Option, server.Server)
+				logPrintln(1, host, ips)
+				if ips != nil {
+					ip := ips[rand.Intn(len(ips))]
+					ip4 := ip.To4()
+					if ip4 != nil {
+						copy(b[:], []byte{0x05, 0x01, 0x00, 0x01})
+						copy(b[4:], ip4[:4])
+						binary.BigEndian.PutUint16(b[8:], uint16(port))
+						n, err = conn.Write(b[:10])
+					} else {
+						copy(b[:], []byte{0x05, 0x01, 0x00, 0x04})
+						copy(b[4:], ip[:16])
+						binary.BigEndian.PutUint16(b[20:], uint16(port))
+						n, err = conn.Write(b[:22])
+					}
+					host = ""
+				}
+			}
+			logPrintln(1, host)
+
+			if host != "" {
+				copy(b[:], []byte{0x05, 0x01, 0x00, 0x03})
+				hostLen := len(host)
+				b[4] = byte(hostLen)
+				copy(b[5:], []byte(host))
+				binary.BigEndian.PutUint16(b[5+hostLen:], uint16(port))
+				n, err = conn.Write(b[:7+hostLen])
+			}
+
 			if err != nil {
 				conn.Close()
 				return nil, err
