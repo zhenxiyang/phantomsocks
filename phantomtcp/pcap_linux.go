@@ -3,7 +3,6 @@
 package phantomtcp
 
 import (
-	"encoding/binary"
 	"net"
 	"syscall"
 

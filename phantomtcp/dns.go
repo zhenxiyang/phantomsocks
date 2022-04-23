@@ -927,7 +927,6 @@ func NSRequest(request []byte, cache bool) []byte {
 				if top != nil {
 					*records = *top
 					break
-
 				}
 				offset++
 			}
