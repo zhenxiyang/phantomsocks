@@ -452,7 +452,7 @@ func getAnswers(response []byte) *RecordAddresses {
 		offset = _offset + 4
 	}
 
-	ips := make([]net.IP, 0)
+	var ips []net.IP
 	var ttl uint32 = 65535
 	cname := ""
 	for i := 0; i < ANCount; i++ {

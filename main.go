@@ -129,7 +129,6 @@ var StartFlags struct {
 	SystemProxy       string `json:"proxy,omitempty"`
 	DnsListenAddr     string `json:"dns,omitempty"`
 	Device            string `json:"device,omitempty"`
-	UDPDevice         string `json:"udpdev,omitempty"`
 	Clients           string `json:"clients,omitempty"`
 	VirtualAddrPrefix int    `json:"vaddrprefix,omitempty"`
 	LogLevel          int    `json:"log,omitempty"`
@@ -169,14 +168,6 @@ func StartService() {
 	ptcp.LogLevel = StartFlags.LogLevel
 	ptcp.PassiveMode = StartFlags.PassiveMode
 	ptcp.ConnectionMonitor(devices)
-
-	if StartFlags.UDPDevice != "" {
-		udpdevices := strings.Split(StartFlags.UDPDevice, ",")
-		if !ptcp.UDPMonitor(udpdevices) {
-			return
-		}
-	}
-
 	ptcp.Init()
 
 	for _, filename := range strings.Split(StartFlags.ConfigFiles, ",") {
@@ -287,7 +278,6 @@ func main() {
 		flag.StringVar(&StartFlags.SystemProxy, "proxy", "", "Proxy")
 		flag.StringVar(&StartFlags.DnsListenAddr, "dns", "", "DNS")
 		flag.StringVar(&StartFlags.Device, "device", "", "Device")
-		flag.StringVar(&StartFlags.UDPDevice, "udpdev", "", "UDP Device")
 		flag.StringVar(&StartFlags.Clients, "clients", "", "Clients")
 		flag.IntVar(&StartFlags.VirtualAddrPrefix, "vaddrprefix", 0, "VirtualAddressPrefix")
 		flag.IntVar(&StartFlags.LogLevel, "log", 0, "LogLevel")

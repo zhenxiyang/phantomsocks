@@ -257,10 +257,6 @@ func ConnectionMonitor(devices []string) bool {
 	return true
 }
 
-func UDPMonitor(devices []string) bool {
-	return true
-}
-
 func SendPacket(packet gopacket.Packet) error {
 	payload := packet.LinkLayer().LayerPayload()
 
@@ -385,10 +381,6 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 		}
 	}
 
-	return nil
-}
-
-func SendJumboUDPPacket(laddr, raddr *net.UDPAddr, payload []byte) error {
 	return nil
 }
 

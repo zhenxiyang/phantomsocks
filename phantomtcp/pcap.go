@@ -265,51 +265,6 @@ func connectionMonitor(device string) {
 	}
 }
 
-func udpMonitor(device string) {
-	fmt.Printf("Device: %v (UDP)\n", device)
-
-	snapLen := int32(65535)
-
-	filter := "net 6.0.0.0/8 and udp port 443"
-
-	var err error
-	pcapHandle, err = pcap.OpenLive(device, snapLen, true, pcap.BlockForever)
-	if err != nil {
-		fmt.Printf("pcap open live failed: %v", err)
-		return
-	}
-
-	if err = pcapHandle.SetBPFFilter(filter); err != nil {
-		fmt.Printf("set bpf filter failed: %v", err)
-		return
-	}
-	defer pcapHandle.Close()
-
-	packetSource := gopacket.NewPacketSource(pcapHandle, pcapHandle.LinkType())
-	packetSource.NoCopy = false
-	for {
-		packet, err := packetSource.NextPacket()
-		if err != nil {
-			logPrintln(1, err)
-			continue
-		}
-
-		//link := packet.LinkLayer()
-		network := packet.NetworkLayer()
-		transport := packet.TransportLayer()
-
-		switch network := network.(type) {
-		case *layers.IPv4:
-			switch transport := transport.(type) {
-			case *layers.UDP:
-				src := net.UDPAddr{IP: network.SrcIP, Port: int(transport.SrcPort)}
-				dst := net.UDPAddr{IP: network.DstIP, Port: int(transport.DstPort)}
-				logPrintln(1, src, "->", dst)
-			}
-		}
-	}
-}
-
 func ConnectionMonitor(devices []string) bool {
 	if devices == nil {
 		DevicePrint()
@@ -323,14 +278,6 @@ func ConnectionMonitor(devices []string) bool {
 
 	for i := 0; i < len(devices); i++ {
 		go connectionMonitor(devices[i])
-	}
-
-	return true
-}
-
-func UDPMonitor(devices []string) bool {
-	for i := 0; i < len(devices); i++ {
-		go udpMonitor(devices[i])
 	}
 
 	return true

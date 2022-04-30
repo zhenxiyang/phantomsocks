@@ -336,7 +336,3 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 
 	return nil
 }
-
-func UDPMonitor(devices []string) bool {
-	return true
-}

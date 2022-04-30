@@ -10,10 +10,6 @@ func ConnectionMonitor(devices []string) bool {
 	return false
 }
 
-func UDPMonitor(devices []string) bool {
-	return false
-}
-
 func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32, ttl uint8, count int) error {
 	return nil
 }
