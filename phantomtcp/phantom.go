@@ -536,17 +536,21 @@ func LoadConfig(filename string) error {
 						mapping := strings.SplitN(keys[1], ">", 2)
 						go UDPMapping(mapping[0], mapping[1])
 					} else {
-						ip := net.ParseIP(keys[0])
-						var records *DNSRecords
 						if strings.HasPrefix(keys[1], "[") {
-							result, hasCache := DNSCache.Load(keys[1][1 : len(keys[1])-1])
+							quote := keys[1][1 : len(keys[1])-1]
+							result, hasCache := DNSCache.Load(quote)
 							if hasCache {
-								records = result.(*DNSRecords)
-							} else {
-								DomainMap[keys[0]] = CurrentServer
-								return nil
+								records := result.(*DNSRecords)
+								DNSCache.Store(keys[0], records)
 							}
+							s, ok := DomainMap[quote]
+							if ok {
+								DomainMap[keys[0]] = s
+							}
+							continue
 						} else {
+							ip := net.ParseIP(keys[0])
+							var records *DNSRecords
 							records = new(DNSRecords)
 							if option != 0 || proxy != "" {
 								records.Index = len(Nose)
@@ -554,33 +558,45 @@ func LoadConfig(filename string) error {
 								Nose = append(Nose, keys[0])
 							}
 
-							ips := strings.Split(keys[1], ",")
-							for i := 0; i < len(ips); i++ {
-								ip := net.ParseIP(ips[i])
+							addrs := strings.Split(keys[1], ",")
+							for i := 0; i < len(addrs); i++ {
+								ip := net.ParseIP(addrs[i])
 								if ip == nil {
-									log.Println(ips[i], "bad ip")
-								}
-								ip4 := ip.To4()
-								if ip4 != nil {
-									if records.A == nil {
-										records.A = new(RecordAddresses)
+									result, hasCache := DNSCache.Load(addrs[i])
+									if hasCache {
+										r := result.(*DNSRecords)
+										if r.A != nil {
+											records.A.Addresses = append(records.A.Addresses, r.A.Addresses...)
+										}
+										if r.AAAA != nil {
+											records.AAAA.Addresses = append(records.AAAA.Addresses, r.AAAA.Addresses...)
+										}
+									} else {
+										log.Println(keys[0], addrs[i], "bad address")
 									}
-									records.A.Addresses = append(records.A.Addresses, ip4)
 								} else {
-									if records.AAAA == nil {
-										records.AAAA = new(RecordAddresses)
+									ip4 := ip.To4()
+									if ip4 != nil {
+										if records.A == nil {
+											records.A = new(RecordAddresses)
+										}
+										records.A.Addresses = append(records.A.Addresses, ip4)
+									} else {
+										if records.AAAA == nil {
+											records.AAAA = new(RecordAddresses)
+										}
+										records.AAAA.Addresses = append(records.AAAA.Addresses, ip)
 									}
-									records.AAAA.Addresses = append(records.AAAA.Addresses, ip)
 								}
 							}
-						}
 
-						if ip == nil {
-							DomainMap[keys[0]] = CurrentServer
-							DNSCache.Store(keys[0], records)
-						} else {
-							DomainMap[ip.String()] = CurrentServer
-							DNSCache.Store(ip.String(), records)
+							if ip == nil {
+								DomainMap[keys[0]] = CurrentServer
+								DNSCache.Store(keys[0], records)
+							} else {
+								DomainMap[ip.String()] = CurrentServer
+								DNSCache.Store(ip.String(), records)
+							}
 						}
 					}
 				} else {
