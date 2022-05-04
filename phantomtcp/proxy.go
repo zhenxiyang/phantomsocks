@@ -660,16 +660,18 @@ func Socks4UProxy(address string) {
 		logPrintln(1, err)
 		return
 	}
-	client, err := net.ListenUDP("udp", laddr)
+	local, err := net.ListenUDP("udp", laddr)
 	if err != nil {
 		logPrintln(1, err)
 		return
 	}
-	defer client.Close()
+	defer local.Close()
 
-	data := make([]byte, 1500)
+	var ConnLock sync.Mutex
+	var ConnMap map[string]net.Conn = make(map[string]net.Conn)
+	data := make([]byte, 1472)
 	for {
-		n, srcAddr, err := client.ReadFromUDP(data)
+		n, srcAddr, err := local.ReadFromUDP(data)
 		if err != nil {
 			logPrintln(1, err)
 			continue
@@ -677,108 +679,94 @@ func Socks4UProxy(address string) {
 
 		var host string
 		var port int
-		if n > 8 && data[0] == 4 && data[1] == 1 {
-			userEnd := 8 + bytes.IndexByte(data[8:n], 0)
+		if n < 8 || data[0] != 4 {
+			continue
+		}
+		switch data[1] {
+		case 1:
 			port = int(binary.BigEndian.Uint16(data[2:4]))
-			if data[4]|data[5]|data[6] == 0 {
-				hostEnd := bytes.IndexByte(data[userEnd+1:n], 0)
-				if hostEnd > 0 {
-					host = string(data[userEnd+1 : userEnd+1+hostEnd])
-				} else {
-					client.WriteToUDP([]byte{0, 91, 0, 0, 0, 0, 0, 0}, srcAddr)
+			ConnLock.Lock()
+			dstAddr := net.UDPAddr{IP: data[4:8], Port: port, Zone: ""}
+			key := strings.Join([]string{srcAddr.String(), dstAddr.String()}, ",")
+			conn, ok := ConnMap[key]
+			if ok {
+				conn.Write(data[8:n])
+				ConnLock.Unlock()
+				continue
+			}
+			ConnLock.Unlock()
+
+			var remoteConn net.Conn = nil
+			if data[4] == VirtualAddrPrefix {
+				index := int(binary.BigEndian.Uint32(data[6:8]))
+				if index >= len(Nose) {
+					return
+				}
+				host = Nose[index]
+				server := ConfigLookup(host)
+				if server.Proxy != "" {
 					continue
 				}
-			} else {
-				if data[4] == VirtualAddrPrefix {
-					index := int(binary.BigEndian.Uint32(data[6:8]))
-					if index >= len(Nose) {
-						return
-					}
-					host = Nose[index]
-				} else {
-					host = net.IP(data[4:8]).String()
+				if server.Option&(OPT_UDP|OPT_HTTP3) == 0 {
+					continue
 				}
+				if server.Option&(OPT_HTTP3) != 0 {
+					if GetQUICVersion(data[:n]) == 0 {
+						continue
+					}
+				}
+				_, ips := NSLookup(host, server.Option, server.Server)
+				if ips == nil {
+					continue
+				}
+
+				logPrintln(1, "Socks4U:", srcAddr, "->", host, port)
+				raddr := net.UDPAddr{IP: ips[0], Port: port}
+				remoteConn, err = net.DialUDP("udp", nil, &raddr)
+				if err != nil {
+					logPrintln(1, err)
+					continue
+				}
+
+				if server.Option&OPT_ZERO != 0 {
+					zero_data := make([]byte, 8+rand.Intn(1024))
+					_, err = remoteConn.Write(zero_data)
+					if err != nil {
+						logPrintln(1, err)
+						continue
+					}
+				}
+
+				_, err = remoteConn.Write(data[8:n])
+			} else {
+				logPrintln(1, "Socks4U:", srcAddr, "->", dstAddr)
+				remoteConn, err = net.DialUDP("udp", nil, &dstAddr)
+				_, err = remoteConn.Write(data[8:n])
 			}
 
-			client.WriteToUDP([]byte{0, 90, data[2], data[3], data[4], data[5], data[6], data[7]}, srcAddr)
-		} else {
-			client.WriteToUDP([]byte{0, 91, 0, 0, 0, 0, 0, 0}, srcAddr)
-			continue
-		}
-
-		server := ConfigLookup(host)
-		if server.Option&(OPT_UDP|OPT_HTTP3) == 0 {
-			continue
-		}
-		if server.Option&(OPT_HTTP3) != 0 {
-			if GetQUICVersion(data[:n]) == 0 {
-				continue
-			}
-		}
-
-		logPrintln(1, "Socks4U:", srcAddr, "->", host, port, server)
-
-		localConn, err := net.DialUDP("udp", nil, srcAddr)
-		if err != nil {
-			logPrintln(1, err)
-			continue
-		}
-
-		var remoteConn net.Conn = nil
-		var proxyConn net.Conn = nil
-		if server.Proxy != "" {
-			remoteAddress := net.JoinHostPort(host, strconv.Itoa(port))
-			remoteConn, proxyConn, err = server.DialProxyUDP(remoteAddress)
-		} else {
-			_, ips := NSLookup(host, server.Option, server.Server)
-			if ips == nil {
-				localConn.Close()
-				continue
-			}
-
-			raddr := net.UDPAddr{IP: ips[0], Port: port}
-			remoteConn, err = net.DialUDP("udp", nil, &raddr)
-		}
-
-		if err != nil {
-			logPrintln(1, err)
-			localConn.Close()
-			if proxyConn != nil {
-				proxyConn.Close()
-			}
-			continue
-		}
-
-		if server.Option&OPT_ZERO != 0 {
-			zero_data := make([]byte, 8+rand.Intn(1024))
-			_, err = remoteConn.Write(zero_data)
 			if err != nil {
 				logPrintln(1, err)
-				localConn.Close()
-				if proxyConn != nil {
-					proxyConn.Close()
-				}
 				continue
 			}
-		}
 
-		_, err = remoteConn.Write(data[:n])
-		if err != nil {
-			logPrintln(1, err)
-			localConn.Close()
-			if proxyConn != nil {
-				proxyConn.Close()
-			}
+			go func(srcAddr net.UDPAddr, remoteConn net.Conn, key string) {
+				data := make([]byte, 1472)
+				remoteConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
+				for {
+					n, err := remoteConn.Read(data)
+					if err != nil {
+						ConnLock.Lock()
+						delete(ConnMap, key)
+						ConnLock.Unlock()
+						remoteConn.Close()
+						return
+					}
+					remoteConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
+					local.WriteToUDP(data[:n], &srcAddr)
+				}
+			}(*srcAddr, remoteConn, key)
+		default:
 			continue
 		}
-
-		go func(localConn, remoteConn, proxyConn net.Conn) {
-			relayUDP(localConn, remoteConn)
-			remoteConn.Close()
-			localConn.Close()
-			if proxyConn != nil {
-				proxyConn.Close()
-			}
-		}(localConn, remoteConn, proxyConn)
 	}
 }
