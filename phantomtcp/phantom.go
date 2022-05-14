@@ -611,10 +611,14 @@ func LoadConfig(filename string) error {
 							ip := net.ParseIP(keys[0])
 							if ip != nil {
 								DomainMap[ip.String()] = CurrentServer
-							} else if server != "" || proxy != "" {
-								DomainMap[keys[0]] = CurrentServer
-								records := new(DNSRecords)
-								DNSCache.Store(keys[0], records)
+							} else {
+								if server != "" || proxy != "" {
+									DomainMap[keys[0]] = CurrentServer
+									records := new(DNSRecords)
+									DNSCache.Store(keys[0], records)
+								} else {
+									DomainMap[keys[0]] = nil
+								}
 							}
 						}
 					}

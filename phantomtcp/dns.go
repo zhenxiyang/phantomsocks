@@ -959,9 +959,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		logPrintln(2, "request:", name, server.Server, server.Proxy)
 		serverAddr = server.Server
 	} else {
-		records.Hint = uint(DefaultServer.Option)
-		logPrintln(2, "request:", name, DefaultServer)
-		serverAddr = DefaultServer.Server
+		return records.BuildResponse(request, qtype, 3600)
 	}
 
 	if serverAddr == "" {

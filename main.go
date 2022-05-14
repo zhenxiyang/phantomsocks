@@ -121,7 +121,6 @@ var StartFlags struct {
 	ConfigFiles       string `json:"config,omitempty"`
 	HostsFile         string `json:"hosts,omitempty"`
 	SocksListenAddr   string `json:"socks,omitempty"`
-	Socks4UListenAddr string `json:"socks4u,omitempty"`
 	PacListenAddr     string `json:"pac,omitempty"`
 	SNIListenAddr     string `json:"sni,omitempty"`
 	RedirectAddr      string `json:"redir,omitempty"`
@@ -200,14 +199,10 @@ func StartService() {
 	if StartFlags.SocksListenAddr != "" {
 		fmt.Println("Socks:", StartFlags.SocksListenAddr)
 		go ListenAndServe(StartFlags.SocksListenAddr, ptcp.SocksProxy)
+		go ptcp.Socks4UProxy(StartFlags.SocksListenAddr)
 		if StartFlags.PacListenAddr != "" {
 			go PACServer(StartFlags.PacListenAddr, StartFlags.SocksListenAddr)
 		}
-	}
-
-	if StartFlags.Socks4UListenAddr != "" {
-		fmt.Println("Socks4U:", StartFlags.Socks4UListenAddr)
-		go ptcp.Socks4UProxy(StartFlags.Socks4UListenAddr)
 	}
 
 	if StartFlags.SNIListenAddr != "" {
@@ -270,7 +265,6 @@ func main() {
 		flag.StringVar(&StartFlags.ConfigFiles, "c", "default.conf", "Config")
 		flag.StringVar(&StartFlags.HostsFile, "hosts", "", "Hosts")
 		flag.StringVar(&StartFlags.SocksListenAddr, "socks", "", "Socks")
-		flag.StringVar(&StartFlags.Socks4UListenAddr, "socks4u", "", "Socks4UDP")
 		flag.StringVar(&StartFlags.PacListenAddr, "pac", "", "PACServer")
 		flag.StringVar(&StartFlags.SNIListenAddr, "sni", "", "SNIProxy")
 		flag.StringVar(&StartFlags.RedirectAddr, "redir", "", "Redirect")
