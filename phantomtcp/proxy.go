@@ -484,14 +484,6 @@ func RedirectProxy(client net.Conn) {
 				}
 			}
 		} else if server.Option != 0 {
-			if ips == nil {
-				_, ips = NSLookup(host, server.Option, server.Server)
-				if len(ips) == 0 {
-					logPrintln(1, host, "no such host")
-					return
-				}
-			}
-
 			var b [1500]byte
 			n, err := client.Read(b[:])
 			if err != nil {
@@ -507,6 +499,17 @@ func RedirectProxy(client net.Conn) {
 				}
 
 				logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
+				if server == nil {
+					return
+				}
+
+				if ips == nil {
+					_, ips = NSLookup(host, server.Option, server.Server)
+					if len(ips) == 0 {
+						logPrintln(1, host, "no such host")
+						return
+					}
+				}
 
 				conn, err = server.Dial(ips, port, b[:n])
 				if err != nil {
@@ -514,6 +517,14 @@ func RedirectProxy(client net.Conn) {
 					return
 				}
 			} else {
+				if ips == nil {
+					_, ips = NSLookup(host, server.Option, server.Server)
+					if len(ips) == 0 {
+						logPrintln(1, host, "no such host")
+						return
+					}
+				}
+
 				logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
 				if server.Option&OPT_HTTP3 != 0 {
 					HttpMove(client, "h3", b[:n])
