@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"net/url"
 	"strconv"
 	"time"
 )
@@ -78,29 +77,21 @@ func relayUDP(left, right net.Conn) error {
 	return err
 }
 
-func (server *PhantomServer) DialProxyUDP(address string) (net.Conn, net.Conn, error) {
-	var err error
-
-	u, err := url.Parse(server.Proxy)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	proxyhost := u.Host
-	scheme := u.Scheme
+func (server *PhantomInterface) DialProxyUDP(address string) (net.Conn, net.Conn, error) {
 	proxy_err := errors.New("invalid proxy")
 
 	host, port := splitHostPort(address)
+	proxyhost := server.Address
 	proxyaddr, proxyport := splitHostPort(proxyhost)
 	var tcpConn net.Conn = nil
 
-	switch scheme {
+	switch server.Protocol {
 	case "socks":
 		fallthrough
 	case "socks5":
 		var proxy_seq uint32 = 0
 		var synpacket *ConnectionInfo
-		var method uint32 = 0
+		var hint uint32 = 0
 
 		raddr, err := net.ResolveTCPAddr("tcp", proxyhost)
 		if err != nil {
@@ -111,8 +102,8 @@ func (server *PhantomServer) DialProxyUDP(address string) (net.Conn, net.Conn, e
 			return nil, nil, err
 		}
 
-		method = server.Option & OPT_MODIFY
-		if method != 0 {
+		hint = server.Hint & OPT_MODIFY
+		if hint != 0 {
 			tcpConn, synpacket, err = DialConnInfo(laddr, raddr, server, nil)
 			if err != nil {
 				return nil, nil, err
@@ -133,8 +124,8 @@ func (server *PhantomServer) DialProxyUDP(address string) (net.Conn, net.Conn, e
 		}
 
 		var b [264]byte
-		if method != 0 {
-			err := ModifyAndSendPacket(synpacket, b[:], method, server.TTL, 2)
+		if hint != 0 {
+			err := ModifyAndSendPacket(synpacket, b[:], hint, server.TTL, 2)
 			if err != nil {
 				tcpConn.Close()
 				return nil, nil, err
@@ -192,41 +183,6 @@ func (server *PhantomServer) DialProxyUDP(address string) (net.Conn, net.Conn, e
 		}
 		udpConn, err := net.DialUDP("udp", nil, &udpAddr)
 		return udpConn, tcpConn, err
-	case "socks4u":
-		udpConn, err := net.Dial("udp", proxyhost)
-		var b [264]byte
-		copy(b[:], []byte{0x04, 0x01})
-		binary.BigEndian.PutUint16(b[2:], uint16(port))
-		requestLen := 0
-		ip := net.ParseIP(host).To4()
-		if ip != nil {
-			copy(b[4:], ip[:4])
-			b[8] = 0
-			requestLen = 9
-		} else {
-			copy(b[4:], []byte{0, 0, 0, 1, 0})
-			copy(b[9:], []byte(host))
-			requestLen = 9 + len(host)
-			b[requestLen] = 0
-			requestLen++
-		}
-		n := 0
-		for i := 0; i < 3; i++ {
-			udpConn.Write(b[:requestLen])
-			udpConn.SetReadDeadline(time.Now().Add(time.Second))
-			n, err = udpConn.Read(b[:])
-			if err != nil {
-				continue
-			}
-		}
-		if err != nil {
-			udpConn.Close()
-			return nil, nil, err
-		}
-		if n == 8 && b[0] == 0 && b[1] == 90 {
-			return udpConn, nil, err
-		}
-		udpConn.Close()
 	case "redirect":
 		if proxyport == 0 {
 			proxyhost = net.JoinHostPort(proxyaddr, strconv.Itoa(port))

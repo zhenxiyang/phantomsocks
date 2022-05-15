@@ -53,10 +53,10 @@ func TProxyUDP(address string) {
 		}
 
 		server := ConfigLookup(host)
-		if server.Option&(OPT_UDP|OPT_HTTP3) == 0 {
+		if server.Hint&(OPT_UDP|OPT_HTTP3) == 0 {
 			continue
 		}
-		if server.Option&(OPT_HTTP3) != 0 {
+		if server.Hint&(OPT_HTTP3) != 0 {
 			if GetQUICVersion(data[:n]) == 0 {
 				continue
 			}
@@ -72,11 +72,11 @@ func TProxyUDP(address string) {
 
 		var remoteConn net.Conn = nil
 		var proxyConn net.Conn = nil
-		if server.Proxy != "" {
+		if server.Protocol != "" {
 			remoteAddress := net.JoinHostPort(host, strconv.Itoa(dstAddr.Port))
 			remoteConn, proxyConn, err = server.DialProxyUDP(remoteAddress)
 		} else {
-			_, ips := NSLookup(host, server.Option, server.Server)
+			_, ips := NSLookup(host, server.Hint, server.DNS)
 			if ips == nil {
 				localConn.Close()
 				continue
@@ -95,7 +95,7 @@ func TProxyUDP(address string) {
 			continue
 		}
 
-		if server.Option&OPT_ZERO != 0 {
+		if server.Hint&OPT_ZERO != 0 {
 			zero_data := make([]byte, 8+rand.Intn(1024))
 			_, err = remoteConn.Write(zero_data)
 			if err != nil {

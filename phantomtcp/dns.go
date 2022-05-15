@@ -32,7 +32,7 @@ var DNSCache sync.Map
 var Nose []string = []string{"phantom.socks"}
 var NoseLock sync.Mutex
 
-func TCPlookup(request []byte, address string, server *PhantomServer) ([]byte, error) {
+func TCPlookup(request []byte, address string, server *PhantomInterface) ([]byte, error) {
 	data := make([]byte, 1024)
 	binary.BigEndian.PutUint16(data[:2], uint16(len(request)))
 	copy(data[2:], request)
@@ -318,7 +318,14 @@ func TFOlookup(request []byte, address string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, _, err = DialConnInfo(nil, addr, &PhantomServer{OPT_TFO, 2, 0, 0, "", "", ""}, data[:len(request)+2])
+	conn, _, err = DialConnInfo(
+		nil, addr,
+		&PhantomInterface{
+			Hint: OPT_TFO,
+			TTL:  1,
+		},
+		data[:len(request)+2],
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -953,17 +960,17 @@ func NSRequest(request []byte, cache bool) []byte {
 
 	server := ConfigLookup(name)
 	var options ServerOptions
-	serverAddr := ""
+	DNS := ""
 	if server != nil {
-		records.Hint = uint(server.Option)
-		logPrintln(2, "request:", name, server.Server, server.Proxy)
-		serverAddr = server.Server
+		records.Hint = uint(server.Hint)
+		logPrintln(2, "request:", name, server.DNS, server.Protocol)
+		DNS = server.DNS
 	} else {
 		return records.BuildResponse(request, qtype, 3600)
 	}
 
-	if serverAddr == "" {
-		if records.Index == 0 && server.Proxy != "" {
+	if DNS == "" {
+		if records.Index == 0 && server.Protocol != "" {
 			NoseLock.Lock()
 			records.Index = len(Nose)
 			Nose = append(Nose, name)
@@ -972,7 +979,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		return records.BuildResponse(request, qtype, 3600)
 	}
 
-	u, err := url.Parse(serverAddr)
+	u, err := url.Parse(DNS)
 	if err != nil {
 		logPrintln(1, err)
 		return nil
@@ -1019,7 +1026,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		return nil
 	}
 
-	if records.Index == 0 && (records.Hint != 0 || server.Proxy != "") {
+	if records.Index == 0 && (records.Hint != 0 || server.Protocol != "") {
 		NoseLock.Lock()
 		records.Index = len(Nose)
 		Nose = append(Nose, name)

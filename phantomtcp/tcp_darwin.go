@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-func DialConnInfo(laddr, raddr *net.TCPAddr, conf *PhantomServer, payload []byte) (net.Conn, *ConnectionInfo, error) {
+func DialConnInfo(laddr, raddr *net.TCPAddr, conf *PhantomInterface, payload []byte) (net.Conn, *ConnectionInfo, error) {
 	addr := raddr.String()
 
-	AddConn(addr, conf.Option)
+	AddConn(addr, conf.Hint)
 	timeout := time.Millisecond * 1500
 	d := net.Dialer{Timeout: timeout, LocalAddr: laddr}
 	conn, err := d.Dial("tcp", addr)

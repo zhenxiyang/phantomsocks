@@ -3,14 +3,20 @@ package phantomtcp
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
 	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.zx2c4.com/wireguard/conn"
+	"golang.zx2c4.com/wireguard/device"
+	"golang.zx2c4.com/wireguard/tun/netstack"
 )
 
 func ReadAtLeast() {
@@ -107,7 +113,7 @@ func SocksProxy(client net.Conn) {
 
 		if host != "" {
 			server := ConfigLookup(host)
-			if server.Option == 0 {
+			if server.Hint == 0 {
 				logPrintln(1, "Socks:", host, port, server)
 				addr := net.JoinHostPort(host, strconv.Itoa(port))
 				logPrintln(1, "Socks:", addr)
@@ -117,9 +123,9 @@ func SocksProxy(client net.Conn) {
 					return
 				}
 				_, err = client.Write(reply)
-			} else if server.Proxy == "" {
+			} else if server.Protocol == "" {
 				logPrintln(1, "Socks:", host, port, server)
-				_, ips := NSLookup(host, server.Option, server.Server)
+				_, ips := NSLookup(host, server.Hint, server.DNS)
 				if len(ips) == 0 {
 					logPrintln(1, host, "no such host")
 					return
@@ -137,19 +143,19 @@ func SocksProxy(client net.Conn) {
 				}
 
 				if b[0] != 0x16 {
-					if server.Option&OPT_HTTP3 != 0 {
+					if server.Hint&OPT_HTTP3 != 0 {
 						HttpMove(client, "h3", b[:n])
 						return
-					} else if server.Option&OPT_HTTPS != 0 {
+					} else if server.Hint&OPT_HTTPS != 0 {
 						HttpMove(client, "https", b[:n])
 						return
-					} else if server.Option&OPT_MOVE != 0 {
-						HttpMove(client, server.Server, b[:n])
+					} else if server.Hint&OPT_MOVE != 0 {
+						HttpMove(client, server.Address, b[:n])
 						return
-					} else if server.Option&OPT_STRIP != 0 {
+					} else if server.Hint&OPT_STRIP != 0 {
 						rand.Seed(time.Now().UnixNano())
 						ipaddr := ips[rand.Intn(len(ips))]
-						if server.Option&OPT_FRONTING != 0 {
+						if server.Hint&OPT_FRONTING != 0 {
 							host = ""
 						}
 						conn, err = DialStrip(ipaddr.String(), host)
@@ -177,7 +183,7 @@ func SocksProxy(client net.Conn) {
 			} else {
 				logPrintln(1, "SocksoverProxy:", client.RemoteAddr(), "->", host, port, server)
 
-				if server.Option&OPT_MODIFY != 0 {
+				if server.Hint&OPT_MODIFY != 0 {
 					_, err = client.Write(reply)
 					if err != nil {
 						conn.Close()
@@ -206,7 +212,7 @@ func SocksProxy(client net.Conn) {
 			if ip.To4() != nil {
 				server := ConfigLookup(ip.String())
 				addr := net.TCPAddr{IP: ip, Port: port, Zone: ""}
-				if server.Option != 0 {
+				if server.Hint != 0 {
 					logPrintln(1, "Socks:", addr.IP.String(), addr.Port, server)
 					client.Write(reply)
 					n, err = client.Read(b[:])
@@ -341,10 +347,10 @@ func SNIProxy(client net.Conn) {
 		}
 
 		server := ConfigLookup(host)
-		if server.Option != 0 {
+		if server.Hint != 0 {
 			logPrintln(1, "SNI:", host, port, server)
 
-			_, ips := NSLookup(host, server.Option, server.Server)
+			_, ips := NSLookup(host, server.Hint, server.DNS)
 			if len(ips) == 0 {
 				logPrintln(1, host, "no such host")
 				return
@@ -357,18 +363,18 @@ func SNIProxy(client net.Conn) {
 					return
 				}
 			} else {
-				if server.Option&OPT_HTTP3 != 0 {
+				if server.Hint&OPT_HTTP3 != 0 {
 					HttpMove(client, "h3", b[:n])
 					return
-				} else if server.Option&OPT_HTTPS != 0 {
+				} else if server.Hint&OPT_HTTPS != 0 {
 					HttpMove(client, "https", b[:n])
 					return
-				} else if server.Option&OPT_MOVE != 0 {
-					HttpMove(client, server.Server, b[:n])
+				} else if server.Hint&OPT_MOVE != 0 {
+					HttpMove(client, server.Address, b[:n])
 					return
-				} else if server.Option&OPT_STRIP != 0 {
+				} else if server.Hint&OPT_STRIP != 0 {
 					ip := ips[rand.Intn(len(ips))]
-					if server.Option&OPT_FRONTING != 0 {
+					if server.Hint&OPT_FRONTING != 0 {
 						host = ""
 					}
 					conn, err = DialStrip(ip.String(), host)
@@ -456,14 +462,14 @@ func RedirectProxy(client net.Conn) {
 		port = addr.Port
 
 		server := ConfigLookup(host)
-		if server.Option&OPT_NOTCP != 0 {
+		if server.Hint&OPT_NOTCP != 0 {
 			return
 		}
 
-		if server.Proxy != "" {
+		if server.Protocol != "" {
 			logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, server)
 
-			if server.Option == OPT_NONE {
+			if server.Hint == OPT_NONE {
 				conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
 				if err != nil {
 					logPrintln(1, host, err)
@@ -483,7 +489,7 @@ func RedirectProxy(client net.Conn) {
 					return
 				}
 			}
-		} else if server.Option != 0 {
+		} else if server.Hint != 0 {
 			var b [1500]byte
 			n, err := client.Read(b[:])
 			if err != nil {
@@ -504,7 +510,7 @@ func RedirectProxy(client net.Conn) {
 				}
 
 				if ips == nil {
-					_, ips = NSLookup(host, server.Option, server.Server)
+					_, ips = NSLookup(host, server.Hint, server.DNS)
 					if len(ips) == 0 {
 						logPrintln(1, host, "no such host")
 						return
@@ -518,7 +524,7 @@ func RedirectProxy(client net.Conn) {
 				}
 			} else {
 				if ips == nil {
-					_, ips = NSLookup(host, server.Option, server.Server)
+					_, ips = NSLookup(host, server.Hint, server.DNS)
 					if len(ips) == 0 {
 						logPrintln(1, host, "no such host")
 						return
@@ -526,18 +532,18 @@ func RedirectProxy(client net.Conn) {
 				}
 
 				logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
-				if server.Option&OPT_HTTP3 != 0 {
+				if server.Hint&OPT_HTTP3 != 0 {
 					HttpMove(client, "h3", b[:n])
 					return
-				} else if server.Option&OPT_HTTPS != 0 {
+				} else if server.Hint&OPT_HTTPS != 0 {
 					HttpMove(client, "https", b[:n])
 					return
-				} else if server.Option&OPT_MOVE != 0 {
-					HttpMove(client, server.Server, b[:n])
+				} else if server.Hint&OPT_MOVE != 0 {
+					HttpMove(client, server.Address, b[:n])
 					return
-				} else if server.Option&OPT_STRIP != 0 {
+				} else if server.Hint&OPT_STRIP != 0 {
 					ip := ips[rand.Intn(len(ips))]
-					if server.Option&OPT_FRONTING != 0 {
+					if server.Hint&OPT_FRONTING != 0 {
 						host = ""
 					}
 					conn, err = DialStrip(ip.String(), host)
@@ -612,10 +618,10 @@ func QUICProxy(address string) {
 			SNI := GetQUICSNI(data[:n])
 			if SNI != "" {
 				server := ConfigLookup(SNI)
-				if server.Option&OPT_UDP == 0 {
+				if server.Hint&OPT_UDP == 0 {
 					continue
 				}
-				_, ips := NSLookup(SNI, server.Option, server.Server)
+				_, ips := NSLookup(SNI, server.Hint, server.DNS)
 				if ips == nil {
 					continue
 				}
@@ -628,7 +634,7 @@ func QUICProxy(address string) {
 					continue
 				}
 
-				if server.Option&OPT_ZERO != 0 {
+				if server.Hint&OPT_ZERO != 0 {
 					zero_data := make([]byte, 8+rand.Intn(1024))
 					_, err = udpConn.Write(zero_data)
 					if err != nil {
@@ -665,7 +671,7 @@ func QUICProxy(address string) {
 	}
 }
 
-func Socks4UProxy(address string) {
+func SocksUDPProxy(address string) {
 	laddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
 		logPrintln(1, err)
@@ -715,18 +721,18 @@ func Socks4UProxy(address string) {
 				}
 				host = Nose[index]
 				server := ConfigLookup(host)
-				if server.Proxy != "" {
+				if server.Protocol != "" {
 					continue
 				}
-				if server.Option&(OPT_UDP|OPT_HTTP3) == 0 {
+				if server.Hint&(OPT_UDP|OPT_HTTP3) == 0 {
 					continue
 				}
-				if server.Option&(OPT_HTTP3) != 0 {
+				if server.Hint&(OPT_HTTP3) != 0 {
 					if GetQUICVersion(data[:n]) == 0 {
 						continue
 					}
 				}
-				_, ips := NSLookup(host, server.Option, server.Server)
+				_, ips := NSLookup(host, server.Hint, server.DNS)
 				if ips == nil {
 					continue
 				}
@@ -739,7 +745,7 @@ func Socks4UProxy(address string) {
 					continue
 				}
 
-				if server.Option&OPT_ZERO != 0 {
+				if server.Hint&OPT_ZERO != 0 {
 					zero_data := make([]byte, 8+rand.Intn(1024))
 					_, err = remoteConn.Write(zero_data)
 					if err != nil {
@@ -780,4 +786,51 @@ func Socks4UProxy(address string) {
 			continue
 		}
 	}
+}
+
+func StartWireguard(config InterfaceConfig) (*netstack.Net, error) {
+	var Address []netip.Addr
+	for _, addr := range strings.Split(config.DNS, ",") {
+		prefix, err := netip.ParsePrefix(addr)
+		if err != nil {
+			logPrintln(0, addr, err)
+			continue
+		}
+		Address = append(Address, prefix.Addr())
+	}
+	var DNS []netip.Addr
+	for _, addr := range strings.Split(config.DNS, ",") {
+		prefix, err := netip.ParsePrefix(addr)
+		if err != nil {
+			logPrintln(0, addr, err)
+			continue
+		}
+		DNS = append(DNS, prefix.Addr())
+	}
+	MTU := int(config.MTU)
+	tun, tnet, err := netstack.CreateNetTUN(Address, DNS, MTU)
+	if err != nil {
+		return nil, err
+	}
+	dev := device.NewDevice(tun, conn.NewDefaultBind(), device.NewLogger(device.LogLevelVerbose, ""))
+
+	ipcRequest := fmt.Sprintf(`private_key=%s
+public_key=%s
+endpoint=%s
+persistent_keepalive_interval=%d
+preshared_key=%s
+allowed_ip=0.0.0.0/0
+allowed_ip=::0/0`, config.PrivateKey, config.PublicKey, config.Endpoint, config.KeepAlive, config.PreSharedKey)
+
+	err = dev.IpcSet(ipcRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	err = dev.Up()
+	if err != nil {
+		return nil, err
+	}
+
+	return tnet, nil
 }

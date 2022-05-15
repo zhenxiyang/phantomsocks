@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/rand"
 	"net"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -146,7 +145,7 @@ func GetLocalAddr(name string, ipv6 bool) (*net.TCPAddr, error) {
 	return nil, nil
 }
 
-func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.Conn, error) {
+func (server *PhantomInterface) Dial(addresses []net.IP, port int, b []byte) (net.Conn, error) {
 	var err error
 	var conn net.Conn
 
@@ -154,11 +153,11 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 	offset := 0
 	length := 0
 
-	if server.Option != 0 {
+	if server.Hint != 0 {
 		device = server.Device
 		if b != nil {
-			if server.Option&OPT_MODIFY != 0 {
-				if server.Option&OPT_TFO != 0 {
+			if server.Hint&OPT_MODIFY != 0 {
+				if server.Hint&OPT_TFO != 0 {
 					length = len(b)
 				} else {
 					offset, length = GetSNI(b)
@@ -188,7 +187,7 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 			if length > 0 {
 				cut := offset + length/2
 				tos := 1 << 2
-				if server.Option&OPT_TTL != 0 {
+				if server.Hint&OPT_TTL != 0 {
 					tos = int(server.TTL) << 2
 				}
 				err = SendWithOption(conn, b[:cut], tos, 1)
@@ -220,13 +219,13 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 
 		cut := offset + length/2
 		var tfo_payload []byte = nil
-		if (server.Option & (OPT_TFO | OPT_HTFO)) != 0 {
-			if (server.Option & OPT_TFO) != 0 {
+		if (server.Hint & (OPT_TFO | OPT_HTFO)) != 0 {
+			if (server.Hint & OPT_TFO) != 0 {
 				tfo_payload = b
 			} else {
 				tfo_payload = b[:cut]
 			}
-		} else if server.Option&OPT_RAND != 0 {
+		} else if server.Hint&OPT_RAND != 0 {
 			_, err = rand.Read(fakepayload)
 			if err != nil {
 				logPrintln(1, err)
@@ -286,8 +285,8 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 
 		synpacket.TCP.Seq++
 		count := 1
-		if (server.Option & (OPT_TFO | OPT_HTFO)) != 0 {
-			if (server.Option & OPT_HTFO) != 0 {
+		if (server.Hint & (OPT_TFO | OPT_HTFO)) != 0 {
+			if (server.Hint & OPT_HTFO) != 0 {
 				_, err = conn.Write(b[cut:])
 				if err != nil {
 					conn.Close()
@@ -295,12 +294,12 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 				}
 			}
 		} else {
-			if server.Option&OPT_MODE2 != 0 {
+			if server.Hint&OPT_MODE2 != 0 {
 				synpacket.TCP.Seq += uint32(cut)
 				fakepayload = fakepayload[cut:]
 				count = 2
 			} else {
-				err = ModifyAndSendPacket(synpacket, fakepayload, server.Option, server.TTL, count)
+				err = ModifyAndSendPacket(synpacket, fakepayload, server.Hint, server.TTL, count)
 				if err != nil {
 					conn.Close()
 					return nil, err
@@ -308,8 +307,8 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 			}
 
 			SegOffset := 0
-			if server.Option&(OPT_SSEG|OPT_1SEG) != 0 {
-				if server.Option&OPT_1SEG != 0 {
+			if server.Hint&(OPT_SSEG|OPT_1SEG) != 0 {
+				if server.Hint&OPT_1SEG != 0 {
 					SegOffset = 1
 				} else {
 					SegOffset = 4
@@ -327,7 +326,7 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 				return nil, err
 			}
 
-			err = ModifyAndSendPacket(synpacket, fakepayload, server.Option, server.TTL, count)
+			err = ModifyAndSendPacket(synpacket, fakepayload, server.Hint, server.TTL, count)
 			if err != nil {
 				conn.Close()
 				return nil, err
@@ -339,14 +338,14 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 				return nil, err
 			}
 
-			if server.Option&OPT_SAT != 0 {
+			if server.Hint&OPT_SAT != 0 {
 				synpacket.TCP.Seq += uint32(len(b))
 				_, err = rand.Read(fakepayload)
 				if err != nil {
 					conn.Close()
 					return nil, err
 				}
-				err = ModifyAndSendPacket(synpacket, fakepayload, server.Option, server.TTL, 2)
+				err = ModifyAndSendPacket(synpacket, fakepayload, server.Hint, server.TTL, 2)
 			}
 		}
 
@@ -354,7 +353,7 @@ func (server *PhantomServer) Dial(addresses []net.IP, port int, b []byte) (net.C
 	}
 }
 
-func (server *PhantomServer) HTTP(client net.Conn, addresses []net.IP, port int, b []byte) (net.Conn, error) {
+func (server *PhantomInterface) HTTP(client net.Conn, addresses []net.IP, port int, b []byte) (net.Conn, error) {
 	var err error
 	var conn net.Conn
 
@@ -415,8 +414,8 @@ func (server *PhantomServer) HTTP(client net.Conn, addresses []net.IP, port int,
 			}
 
 			count := 1
-			if server.Option&OPT_MODE2 == 0 {
-				err = ModifyAndSendPacket(connInfo, fakepayload, server.Option, server.TTL, 1)
+			if server.Hint&OPT_MODE2 == 0 {
+				err = ModifyAndSendPacket(connInfo, fakepayload, server.Hint, server.TTL, 1)
 				if err != nil {
 					conn.Close()
 					return nil, err
@@ -433,7 +432,7 @@ func (server *PhantomServer) HTTP(client net.Conn, addresses []net.IP, port int,
 				return nil, err
 			}
 
-			err = ModifyAndSendPacket(connInfo, fakepayload, server.Option, server.TTL, count)
+			err = ModifyAndSendPacket(connInfo, fakepayload, server.Hint, server.TTL, count)
 			if err != nil {
 				conn.Close()
 				return nil, err
@@ -455,7 +454,7 @@ func (server *PhantomServer) HTTP(client net.Conn, addresses []net.IP, port int,
 						return
 					}
 
-					err = ModifyAndSendPacket(connInfo, fakepayload, server.Option, server.TTL, 2)
+					err = ModifyAndSendPacket(connInfo, fakepayload, server.Hint, server.TTL, 2)
 					if err != nil {
 						conn.Close()
 						return
@@ -507,35 +506,28 @@ func (server *PhantomServer) HTTP(client net.Conn, addresses []net.IP, port int,
 	return conn, err
 }
 
-func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn, error) {
+func (server *PhantomInterface) DialProxy(address string, header []byte) (net.Conn, error) {
 	var err error
 	var conn net.Conn
 
-	u, err := url.Parse(server.Proxy)
-	if err != nil {
-		return nil, err
-	}
-
-	proxyhost := u.Host
-	scheme := u.Scheme
 	proxy_err := errors.New("invalid proxy")
-
 	var synpacket *ConnectionInfo
-	var method uint32 = 0
+	var hint uint32 = 0
 
 	host, port := splitHostPort(address)
-	proxyaddr, proxyport := splitHostPort(proxyhost)
+	proxyhost := server.Address
+	proxyaddr, proxyport := splitHostPort(server.Address)
 	if proxyport == 0 {
-		if scheme == "nat64" {
+		if server.Protocol == "nat64" {
 			proxyhost = net.JoinHostPort(proxyaddr+host, strconv.Itoa(port))
 		} else {
 			proxyhost = net.JoinHostPort(proxyaddr, strconv.Itoa(port))
 		}
 	}
 
-	if server.Option&OPT_MODIFY != 0 {
+	if server.Hint&OPT_MODIFY != 0 {
 		if header != nil {
-			if server.Option&OPT_HTTP != 0 {
+			if server.Hint&OPT_HTTP != 0 {
 				var request_host string = ""
 				if header[0] == 0x16 {
 					offset, length := GetSNI(header)
@@ -548,7 +540,7 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 					return nil, proxy_err
 				}
 			}
-			method = server.Option & OPT_MODIFY
+			hint = server.Hint & OPT_MODIFY
 		}
 
 		raddr, err := net.ResolveTCPAddr("tcp", proxyhost)
@@ -560,8 +552,8 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 			return nil, err
 		}
 
-		if method != 0 {
-			method = server.Option
+		if hint != 0 {
+			hint = server.Hint
 			conn, synpacket, err = DialConnInfo(laddr, raddr, server, nil)
 			if err != nil {
 				return nil, err
@@ -576,32 +568,41 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 			synpacket.TCP.Seq++
 		} else {
 			conn, err = net.DialTCP("tcp", laddr, raddr)
-			if err != nil {
-				return nil, err
-			}
+		}
+	} else if server.Protocol == "wireguard" {
+		var ips []net.IP
+		if server.DNS != "" {
+			_, ips = NSLookup(host, server.Hint, server.DNS)
+		}
+		if ips != nil {
+			ip := ips[rand.Intn(len(ips))]
+			conn, err = server.TNet.DialTCP(&net.TCPAddr{IP: ip, Port: port})
+		} else {
+			conn, err = server.TNet.Dial("tcp", address)
 		}
 	} else {
 		conn, err = net.Dial("tcp", proxyhost)
-		if err != nil {
-			return nil, err
-		}
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	var proxy_seq uint32 = 0
-	switch scheme {
+	switch server.Protocol {
 	case "http":
 		{
 			request := []byte(fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", address))
 			fakepayload := make([]byte, len(request))
 			var n int = 0
-			if method != 0 {
-				if method&OPT_SSEG != 0 {
+			if hint != 0 {
+				if hint&OPT_SSEG != 0 {
 					n, err = conn.Write(request[:4])
 					if err != nil {
 						conn.Close()
 						return nil, err
 					}
-				} else if method&OPT_MODE2 != 0 {
+				} else if hint&OPT_MODE2 != 0 {
 					n, err = conn.Write(request[:10])
 					if err != nil {
 						conn.Close()
@@ -610,15 +611,15 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 				}
 
 				proxy_seq += uint32(n)
-				err = ModifyAndSendPacket(synpacket, fakepayload, method, server.TTL, 2)
+				err = ModifyAndSendPacket(synpacket, fakepayload, hint, server.TTL, 2)
 				if err != nil {
 					conn.Close()
 					return nil, err
 				}
 
-				if method&OPT_SSEG != 0 {
+				if hint&OPT_SSEG != 0 {
 					n, err = conn.Write(request[4:])
-				} else if method&OPT_MODE2 != 0 {
+				} else if hint&OPT_MODE2 != 0 {
 					n, err = conn.Write(request[10:])
 				} else {
 					n, err = conn.Write(request)
@@ -645,8 +646,8 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 	case "https":
 		{
 			var b [264]byte
-			if method != 0 {
-				err := ModifyAndSendPacket(synpacket, b[:], method, server.TTL, 2)
+			if hint != 0 {
+				err := ModifyAndSendPacket(synpacket, b[:], hint, server.TTL, 2)
 				if err != nil {
 					conn.Close()
 					return nil, err
@@ -674,8 +675,8 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 	case "socks5":
 		{
 			var b [264]byte
-			if method != 0 {
-				err := ModifyAndSendPacket(synpacket, b[:], method, server.TTL, 2)
+			if hint != 0 {
+				err := ModifyAndSendPacket(synpacket, b[:], hint, server.TTL, 2)
 				if err != nil {
 					conn.Close()
 					return nil, err
@@ -699,8 +700,8 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 				return nil, proxy_err
 			}
 
-			if server.Server != "" {
-				_, ips := NSLookup(host, server.Option, server.Server)
+			if server.DNS != "" {
+				_, ips := NSLookup(host, server.Hint, server.DNS)
 				logPrintln(1, host, ips)
 				if ips != nil {
 					ip := ips[rand.Intn(len(ips))]
@@ -760,8 +761,8 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 	case "socks4a":
 		{
 			var b [264]byte
-			if method != 0 {
-				err := ModifyAndSendPacket(synpacket, b[:], method, server.TTL, 2)
+			if hint != 0 {
+				err := ModifyAndSendPacket(synpacket, b[:], hint, server.TTL, 2)
 				if err != nil {
 					conn.Close()
 					return nil, err
@@ -800,6 +801,7 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 				return nil, proxy_err
 			}
 		}
+	case "wireguard":
 	case "redirect":
 	case "nat64":
 	default:
@@ -807,7 +809,7 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 		return nil, proxy_err
 	}
 
-	if method == 0 || scheme == "https" {
+	if hint == 0 || server.Protocol == "https" {
 		if header != nil {
 			_, err = conn.Write(header)
 			if err != nil {
@@ -848,7 +850,7 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 		cut := (min_dot + max_dot) / 2
 
 		count := 1
-		if method&OPT_SSEG != 0 {
+		if hint&OPT_SSEG != 0 {
 			_, err = conn.Write(header[:4])
 			if err != nil {
 				conn.Close()
@@ -857,19 +859,19 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 		}
 
 		synpacket.TCP.Seq += proxy_seq
-		if method&OPT_MODE2 != 0 {
+		if hint&OPT_MODE2 != 0 {
 			synpacket.TCP.Seq += uint32(cut)
 			fakepayload = fakepayload[cut:]
 			count = 2
 		} else {
-			err = ModifyAndSendPacket(synpacket, fakepayload, method, server.TTL, count)
+			err = ModifyAndSendPacket(synpacket, fakepayload, hint, server.TTL, count)
 			if err != nil {
 				conn.Close()
 				return nil, err
 			}
 		}
 
-		if method&OPT_SSEG != 0 {
+		if hint&OPT_SSEG != 0 {
 			_, err = conn.Write(header[4:cut])
 		} else {
 			_, err = conn.Write(header[:cut])
@@ -879,7 +881,7 @@ func (server *PhantomServer) DialProxy(address string, header []byte) (net.Conn,
 			return nil, err
 		}
 
-		err = ModifyAndSendPacket(synpacket, fakepayload, method, server.TTL, count)
+		err = ModifyAndSendPacket(synpacket, fakepayload, hint, server.TTL, count)
 		if err != nil {
 			conn.Close()
 			return nil, err

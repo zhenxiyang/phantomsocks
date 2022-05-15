@@ -60,10 +60,10 @@ func connectionMonitor(layer uint8) {
 		case *layers.IPv4:
 			var srcPort layers.TCPPort
 			var synAddr string
-			var method uint32 = 0
+			var hint uint32 = 0
 			if synack {
-				method = ConnWait4[tcp.DstPort]
-				if method == 0 {
+				hint = ConnWait4[tcp.DstPort]
+				if hint == 0 {
 					winDivert.Send(divertpacket)
 					continue
 				}
@@ -77,11 +77,11 @@ func connectionMonitor(layer uint8) {
 				result, ok := ConnSyn.Load(synAddr)
 				if ok {
 					info := result.(SynInfo)
-					method = info.Option
+					hint = info.Option
 				}
 			}
 
-			if method != 0 {
+			if hint != 0 {
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -98,9 +98,9 @@ func connectionMonitor(layer uint8) {
 				ch := ConnInfo4[srcPort]
 				connInfo := &ConnectionInfo{nil, ip, *tcp}
 
-				if method&(OPT_TFO|OPT_HTFO|OPT_SYNX2) != 0 {
+				if hint&(OPT_TFO|OPT_HTFO|OPT_SYNX2) != 0 {
 					if synack {
-						if method&(OPT_TFO|OPT_HTFO) != 0 {
+						if hint&(OPT_TFO|OPT_HTFO) != 0 {
 							for _, op := range tcp.Options {
 								if op.OptionType == 34 {
 									TFOCookies.Store(ip.DstIP.String(), op.OptionData)
@@ -108,10 +108,10 @@ func connectionMonitor(layer uint8) {
 							}
 						}
 						ConnWait4[srcPort] = 0
-					} else if method&(OPT_TFO|OPT_HTFO) != 0 {
+					} else if hint&(OPT_TFO|OPT_HTFO) != 0 {
 						if ip.TTL < 128 {
 							count := 1
-							if method&OPT_SYNX2 != 0 {
+							if hint&OPT_SYNX2 != 0 {
 								count = 2
 							}
 
@@ -122,7 +122,7 @@ func connectionMonitor(layer uint8) {
 								if payload != nil {
 									ip.TOS = 0
 									ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, count)
-									ConnWait4[srcPort] = method
+									ConnWait4[srcPort] = hint
 								} else {
 									connInfo = nil
 								}
@@ -132,7 +132,7 @@ func connectionMonitor(layer uint8) {
 								connInfo = nil
 							}
 						}
-					} else if method&OPT_SYNX2 != 0 {
+					} else if hint&OPT_SYNX2 != 0 {
 						winDivert.Send(divertpacket)
 						SendPacket(packet)
 					}
@@ -152,10 +152,10 @@ func connectionMonitor(layer uint8) {
 		case *layers.IPv6:
 			var srcPort layers.TCPPort
 			var synAddr string
-			var method uint32 = 0
+			var hint uint32 = 0
 			if synack {
-				method = ConnWait6[tcp.DstPort]
-				if method == 0 {
+				hint = ConnWait6[tcp.DstPort]
+				if hint == 0 {
 					winDivert.Send(divertpacket)
 					continue
 				}
@@ -169,10 +169,10 @@ func connectionMonitor(layer uint8) {
 				result, ok := ConnSyn.Load(synAddr)
 				if ok {
 					info := result.(SynInfo)
-					method = info.Option
+					hint = info.Option
 				}
 			}
-			if method != 0 {
+			if hint != 0 {
 				if synack {
 					srcIP := ip.DstIP
 					ip.DstIP = ip.SrcIP
@@ -189,9 +189,9 @@ func connectionMonitor(layer uint8) {
 				ch := ConnInfo6[srcPort]
 				connInfo := &ConnectionInfo{nil, ip, *tcp}
 
-				if method&(OPT_TFO|OPT_HTFO|OPT_SYNX2) != 0 {
+				if hint&(OPT_TFO|OPT_HTFO|OPT_SYNX2) != 0 {
 					if synack {
-						if method&(OPT_TFO|OPT_HTFO) != 0 {
+						if hint&(OPT_TFO|OPT_HTFO) != 0 {
 							for _, op := range tcp.Options {
 								if op.OptionType == 34 {
 									TFOCookies.Store(ip.DstIP.String(), op.OptionData)
@@ -199,10 +199,10 @@ func connectionMonitor(layer uint8) {
 							}
 						}
 						ConnWait6[srcPort] = 0
-					} else if method&(OPT_TFO|OPT_HTFO) != 0 {
+					} else if hint&(OPT_TFO|OPT_HTFO) != 0 {
 						if ip.HopLimit < 128 {
 							count := 1
-							if method&OPT_SYNX2 != 0 {
+							if hint&OPT_SYNX2 != 0 {
 								count = 2
 							}
 
@@ -213,7 +213,7 @@ func connectionMonitor(layer uint8) {
 								if payload != nil {
 									ip.TrafficClass = 0
 									ModifyAndSendPacket(connInfo, payload, OPT_TFO, 0, count)
-									ConnWait4[srcPort] = method
+									ConnWait4[srcPort] = hint
 								} else {
 									connInfo = nil
 								}
@@ -223,7 +223,7 @@ func connectionMonitor(layer uint8) {
 								connInfo = nil
 							}
 						}
-					} else if method&OPT_SYNX2 != 0 {
+					} else if hint&OPT_SYNX2 != 0 {
 						winDivert.Send(divertpacket)
 						SendPacket(packet)
 					}
@@ -271,11 +271,11 @@ func SendPacket(packet gopacket.Packet) error {
 	return err
 }
 
-func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32, ttl uint8, count int) error {
+func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, hint uint32, ttl uint8, count int) error {
 	ipLayer := connInfo.IP
 
 	var tcpLayer *layers.TCP
-	if method&OPT_TFO != 0 {
+	if hint&OPT_TFO != 0 {
 		tcpLayer = &connInfo.TCP
 
 		tcpLayer.Seq -= uint32(len(payload))
@@ -312,21 +312,21 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 			Window:     connInfo.TCP.Window,
 		}
 
-		if method&OPT_WMD5 != 0 {
+		if hint&OPT_WMD5 != 0 {
 			tcpLayer.Options = []layers.TCPOption{
 				layers.TCPOption{19, 16, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
 			}
-		} else if method&OPT_WTIME != 0 {
+		} else if hint&OPT_WTIME != 0 {
 			tcpLayer.Options = []layers.TCPOption{
 				layers.TCPOption{8, 8, []byte{0, 0, 0, 0, 0, 0, 0, 0}},
 			}
 		}
 	}
 
-	if method&OPT_NACK != 0 {
+	if hint&OPT_NACK != 0 {
 		tcpLayer.ACK = false
 		tcpLayer.Ack = 0
-	} else if method&OPT_WACK != 0 {
+	} else if hint&OPT_WACK != 0 {
 		tcpLayer.Ack += uint32(tcpLayer.Window)
 	}
 
@@ -335,11 +335,11 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 	var options gopacket.SerializeOptions
 	options.FixLengths = true
 
-	if method&OPT_WCSUM == 0 {
+	if hint&OPT_WCSUM == 0 {
 		options.ComputeChecksums = true
 	}
 
-	if method&OPT_WSEQ != 0 {
+	if hint&OPT_WSEQ != 0 {
 		tcpLayer.Seq--
 		fakepayload := make([]byte, len(payload)+1)
 		fakepayload[0] = 0xFF
@@ -351,14 +351,14 @@ func ModifyAndSendPacket(connInfo *ConnectionInfo, payload []byte, method uint32
 
 	switch ip := ipLayer.(type) {
 	case *layers.IPv4:
-		if method&OPT_TTL != 0 {
+		if hint&OPT_TTL != 0 {
 			ip.TTL = ttl
 		}
 		gopacket.SerializeLayers(buffer, options,
 			ip, tcpLayer, gopacket.Payload(payload),
 		)
 	case *layers.IPv6:
-		if method&OPT_TTL != 0 {
+		if hint&OPT_TTL != 0 {
 			ip.HopLimit = ttl
 		}
 		gopacket.SerializeLayers(buffer, options,

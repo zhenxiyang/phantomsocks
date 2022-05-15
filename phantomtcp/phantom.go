@@ -12,20 +12,43 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"golang.zx2c4.com/wireguard/tun/netstack"
 )
 
-type PhantomServer struct {
-	Option uint32
-	TTL    byte
-	MAXTTL byte
-	MSS    uint16
-	Server string
-	Proxy  string
-	Device string
+type InterfaceConfig struct {
+	Name   string `json:"name,omitempty"`
+	Device string `json:"device,omitempty"`
+	DNS    string `json:"dns,omitempty"`
+	Hint   string `json:"hint,omitempty"`
+	MTU    int    `json:"mtu,omitempty"`
+	TTL    int    `json:"ttl,omitempty"`
+	MAXTTL int    `json:"maxttl,omitempty"`
+
+	Protocol     string `json:"protocol,omitempty"`
+	Address      string `json:"address,omitempty"`
+	PrivateKey   string `json:"privatekey,omitempty"`
+	PublicKey    string `json:"publickey,omitempty"`
+	PreSharedKey string `json:"presharedkey,omitempty"`
+	Endpoint     string `json:"endpoint,omitempty"`
+	KeepAlive    int    `json:"keepalive,omitempty"`
 }
 
-var DomainMap map[string]*PhantomServer
-var DefaultServer *PhantomServer = nil
+type PhantomInterface struct {
+	Device string
+	DNS    string
+	Hint   uint32
+	MTU    uint16
+	TTL    byte
+	MAXTTL byte
+
+	Protocol string
+	Address  string
+	TNet     *netstack.Net
+}
+
+var DomainMap map[string]*PhantomInterface
+var DefaultInterface *PhantomInterface = nil
 
 var SubdomainDepth = 2
 var LogLevel = 0
@@ -72,7 +95,7 @@ const (
 const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME
 const OPT_MODIFY = OPT_FAKE | OPT_SSEG | OPT_TFO | OPT_HTFO | OPT_MODE2
 
-var MethodMap = map[string]uint32{
+var HintMap = map[string]uint32{
 	"none":   OPT_NONE,
 	"ttl":    OPT_TTL,
 	"mss":    OPT_MSS,
@@ -116,7 +139,7 @@ func logPrintln(level int, v ...interface{}) {
 	}
 }
 
-func ConfigLookup(name string) *PhantomServer {
+func ConfigLookup(name string) *PhantomInterface {
 	config, ok := DomainMap[name]
 	if ok {
 		return config
@@ -136,16 +159,16 @@ func ConfigLookup(name string) *PhantomServer {
 		offset++
 	}
 
-	return DefaultServer
+	return DefaultInterface
 }
 
-func GetConfig(name string) *PhantomServer {
+func GetConfig(name string) *PhantomInterface {
 	config, ok := DomainMap[name]
 	if ok {
 		return config
 	}
 
-	return DefaultServer
+	return DefaultInterface
 }
 
 func GetHost(b []byte) (offset int, length int) {
@@ -400,10 +423,6 @@ func getMyIPv6() net.IP {
 	return nil
 }
 
-func Init() {
-	DomainMap = make(map[string]*PhantomServer)
-}
-
 func LoadConfig(filename string) error {
 	conf, err := os.Open(filename)
 	if err != nil {
@@ -413,15 +432,11 @@ func LoadConfig(filename string) error {
 
 	br := bufio.NewReader(conf)
 
-	var option uint32 = 0
-	var minTTL byte = 0
-	var maxTTL byte = 0
-	var syncMSS uint16 = 0
-	server := ""
-	proxy := ""
-	device := ""
-
-	var CurrentServer *PhantomServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
+	default_interface, ok := InterfaceMap["default"]
+	if ok {
+		DefaultInterface = &default_interface
+	}
+	var CurrentInterface *PhantomInterface = &PhantomInterface{}
 
 	for {
 		line, _, err := br.ReadLine()
@@ -434,18 +449,7 @@ func LoadConfig(filename string) error {
 				l := strings.SplitN(string(line), "#", 2)[0]
 				keys := strings.SplitN(l, "=", 2)
 				if len(keys) > 1 {
-					if keys[0] == "server" {
-						logPrintln(2, string(line))
-						if keys[1] == "none" {
-							server = ""
-						} else {
-							server = keys[1]
-						}
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
-						if DefaultServer == nil {
-							DefaultServer = CurrentServer
-						}
-					} else if keys[0] == "dns-min-ttl" {
+					if keys[0] == "dns-min-ttl" {
 						logPrintln(2, string(line))
 						ttl, err := strconv.Atoi(keys[1])
 						if err != nil {
@@ -453,76 +457,6 @@ func LoadConfig(filename string) error {
 							return err
 						}
 						DNSMinTTL = uint32(ttl)
-
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
-					} else if keys[0] == "method" {
-						logPrintln(2, string(line))
-
-						option = OPT_NONE
-						methods := strings.Split(keys[1], ",")
-						for _, m := range methods {
-							method, ok := MethodMap[m]
-							if ok {
-								option |= method
-							} else {
-								logPrintln(1, "unsupported method: "+m)
-							}
-						}
-
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
-					} else if keys[0] == "ttl" {
-						logPrintln(2, string(line))
-
-						ttl, err := strconv.Atoi(keys[1])
-						if err != nil {
-							log.Println(string(line), err)
-							return err
-						}
-						minTTL = byte(ttl)
-
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
-					} else if keys[0] == "mss" {
-						logPrintln(2, string(line))
-
-						mss, err := strconv.Atoi(keys[1])
-						if err != nil {
-							log.Println(string(line), err)
-							return err
-						}
-						syncMSS = uint16(mss)
-
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
-					} else if keys[0] == "max-ttl" {
-						logPrintln(2, string(line))
-
-						ttl, err := strconv.Atoi(keys[1])
-						if err != nil {
-							log.Println(string(line), err)
-							return err
-						}
-						maxTTL = byte(ttl)
-
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
-					} else if keys[0] == "proxy" {
-						logPrintln(2, string(line))
-
-						if keys[1] == "direct" {
-							proxy = ""
-						} else {
-							proxy = keys[1]
-						}
-
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
-					} else if keys[0] == "device" {
-						logPrintln(2, string(line))
-
-						if keys[1] == "default" {
-							device = ""
-						} else {
-							device = keys[1]
-						}
-
-						CurrentServer = &PhantomServer{option, minTTL, maxTTL, syncMSS, server, proxy, device}
 					} else if keys[0] == "subdomain" {
 						SubdomainDepth, err = strconv.Atoi(keys[1])
 						if err != nil {
@@ -552,9 +486,9 @@ func LoadConfig(filename string) error {
 							ip := net.ParseIP(keys[0])
 							var records *DNSRecords
 							records = new(DNSRecords)
-							if option != 0 || proxy != "" {
+							if CurrentInterface.Hint != 0 || CurrentInterface.Protocol != "" {
 								records.Index = len(Nose)
-								records.Hint = uint(option)
+								records.Hint = uint(CurrentInterface.Hint)
 								Nose = append(Nose, keys[0])
 							}
 
@@ -591,33 +525,41 @@ func LoadConfig(filename string) error {
 							}
 
 							if ip == nil {
-								DomainMap[keys[0]] = CurrentServer
+								DomainMap[keys[0]] = CurrentInterface
 								DNSCache.Store(keys[0], records)
 							} else {
-								DomainMap[ip.String()] = CurrentServer
+								DomainMap[ip.String()] = CurrentInterface
 								DNSCache.Store(ip.String(), records)
 							}
 						}
 					}
 				} else {
-					addr, err := net.ResolveTCPAddr("tcp", keys[0])
-					if err == nil {
-						DomainMap[addr.String()] = CurrentServer
+					if keys[0][0] == '[' {
+						face, ok := InterfaceMap[keys[0][1:len(keys[0])-1]]
+						if ok {
+							CurrentInterface = &face
+							logPrintln(1, keys[0], CurrentInterface)
+						}
 					} else {
-						_, ipnet, err := net.ParseCIDR(keys[0])
+						addr, err := net.ResolveTCPAddr("tcp", keys[0])
 						if err == nil {
-							DomainMap[ipnet.String()] = CurrentServer
+							DomainMap[addr.String()] = CurrentInterface
 						} else {
-							ip := net.ParseIP(keys[0])
-							if ip != nil {
-								DomainMap[ip.String()] = CurrentServer
+							_, ipnet, err := net.ParseCIDR(keys[0])
+							if err == nil {
+								DomainMap[ipnet.String()] = CurrentInterface
 							} else {
-								if server != "" || proxy != "" {
-									DomainMap[keys[0]] = CurrentServer
-									records := new(DNSRecords)
-									DNSCache.Store(keys[0], records)
+								ip := net.ParseIP(keys[0])
+								if ip != nil {
+									DomainMap[ip.String()] = CurrentInterface
 								} else {
-									DomainMap[keys[0]] = nil
+									if CurrentInterface.DNS != "" || CurrentInterface.Protocol != "" {
+										DomainMap[keys[0]] = CurrentInterface
+										records := new(DNSRecords)
+										DNSCache.Store(keys[0], records)
+									} else {
+										DomainMap[keys[0]] = nil
+									}
 								}
 							}
 						}
@@ -681,9 +623,9 @@ func LoadHosts(filename string) error {
 			}
 
 			server := ConfigLookup(name)
-			if ok && server.Option != 0 {
+			if ok && server.Hint != 0 {
 				records.Index = len(Nose)
-				records.Hint = uint(server.Option)
+				records.Hint = uint(server.Hint)
 				Nose = append(Nose, name)
 			}
 			ip := net.ParseIP(k[0])
@@ -726,4 +668,70 @@ function FindProxyForURL(url, host) {
 }
 `
 	return fmt.Sprintf(Context, address, rule, SubdomainDepth)
+}
+
+var InterfaceMap map[string]PhantomInterface
+
+func CreateInterfaces(Interfaces []InterfaceConfig) []string {
+	DomainMap = make(map[string]*PhantomInterface)
+	InterfaceMap = make(map[string]PhantomInterface)
+
+	contains := func(a []string, x string) bool {
+		for _, n := range a {
+			if x == n {
+				return true
+			}
+		}
+		return false
+	}
+
+	var devices []string
+	for _, config := range Interfaces {
+		var Hint uint32 = OPT_NONE
+		for _, h := range strings.Split(config.Hint, ",") {
+			if h != "" {
+				hint, ok := HintMap[h]
+				if ok {
+					Hint |= hint
+				} else {
+					logPrintln(1, "unsupported hint: "+h)
+				}
+			}
+		}
+
+		if config.Protocol == "wireguard" {
+			tnet, err := StartWireguard(config)
+			if err != nil {
+				logPrintln(0, config, err)
+				continue
+			}
+			InterfaceMap[config.Name] = PhantomInterface{
+				Device: config.Device,
+				DNS:    config.DNS,
+
+				Protocol: config.Protocol,
+				TNet:     tnet,
+			}
+		} else {
+			InterfaceMap[config.Name] = PhantomInterface{
+				Device: config.Device,
+				DNS:    config.DNS,
+				Hint:   Hint,
+				MTU:    uint16(config.MTU),
+				TTL:    byte(config.TTL),
+				MAXTTL: byte(config.MAXTTL),
+
+				Protocol: config.Protocol,
+				Address:  config.Address,
+			}
+		}
+
+		if config.Device != "" && !contains(devices, config.Device) {
+			devices = append(devices, config.Device)
+		}
+	}
+	logPrintln(1, InterfaceMap)
+
+	go ConnectionMonitor(devices)
+	return devices
 }
