@@ -2,71 +2,115 @@
 A cross-platform proxy client/server for Linux/Windows/macOS with Pcap/RawSocket/WinDivert
 ## Usage
 ```
-phantomsocks
-  -c string
-    	Config (default "default.conf")
-  -device string
-    	Device
-  -dns string
-    	DNS
-  -hosts string
-    	Hosts
+./phantomsocks -h
+Usage of ./phantomsocks:
   -log int
     	LogLevel
-  -pac string
-    	PACServer
-  -sni string
-    	SNIProxy
-  -socks string
-    	Socks proxy
-  -redir string
-     	Netfilter TCP redirect
-  -proxy string
-     	Set system proxy
-  -vaddrprefix int
-      Virtual Address Prefix
+  -maxprocs int
+    	MaxProcesses
+  -install
+    	Install service (Windows)
+  -remove
+    	Remove service (Windows)
+  -start
+    	Start service (Windows)
+  -stop
+    	Stop service (Windows)
+```
+## Configure
+### config.json:
+```
+{
+    "config": "1.conf,2.conf,3.conf",
+    "socks": "address:port",
+    "dns": "address:port",
+    "redir": ":port",
+    "vaddrprefix": 6,
+    "proxy": "socks://address:port",
+    "interfaces": [
+        {
+            "name": "default",
+            "dns": "udp://8.8.8.8:53"
+        },
+        {
+            "name": "https",
+            "dns": "udp://8.8.8.8:53",
+            "device": "eth0",
+            "hint": "https"
+        },
+        {
+            "name": "doh",
+            "dns": "https://cloudflare-dns.com/dns-query"
+        },
+        {
+            "name": "dot",
+            "dns": "tls://8.8.8.8:853"
+        },
+        {
+            "name": "ecs",
+            "dns": "udp://8.8.8.8:53/?ecs=35.190.247.1"
+        },
+        {
+            "name": "socks5",
+            "protocol": "socks5",
+            "address": "127.0.0.1:1080"
+        },
+        {
+            "name": "socks4",
+            "dns": "udp://8.8.8.8:53",
+            "protocol": "socks4",
+            "address": "127.0.0.1:1080"
+        }
+    ]
+}
 ```
 ### Socks:
 ```
 Linux:
-sudo ./phantomsocks -device eth0 -socks 127.0.0.1:1080
+edit config.json set socks as 127.0.0.1:1080
+run phantomsocks
 
 Windows(windivert):
-phantomsocks -socks 127.0.0.1:1080 -proxy socks://127.0.0.1:1080/?dns=127.0.0.1
+edit config.json
+    "socks": "127.0.0.1:1080",
+    "proxy" :"socks://127.0.0.1:1080/?dns=127.0.0.1"
+run phantomsocks
 
 macOS:
-./phantomsocks -device en0 -socks 127.0.0.1:1080 -proxy socks://127.0.0.1:1080
+edit config.json
+    "socks": "127.0.0.1:1080",
+    "proxy": "socks://127.0.0.1:1080"
+run phantomsocks
 ```
 ### Redirect:
 ```
 Linux:
 iptables -t nat -A OUTPUT -d 6.0.0.0/8 -p tcp -j REDIRECT --to-port 6
-./phantomsocks -device eth0 -dns :53 -vaddrprefix 6 -redir :6
+edit config.json
+    "redir": ":6",
+    "vaddrprefix": 6
+run phantomsocks
 
 Windows(windivert):
-./phantomsocks -redir 0.0.0.0:6 -vaddrprefix 6 -proxy redirect://0.0.0.0:6
+edit config.json
+    "redir": ":6",
+    "vaddrprefix": 6,
+    "proxy": "redirect://0.0.0.0:6"
+run phantomsocks
 ```
 
-## Configure
+### Rules
 ```
-  server=*          #domains below will use this DNS or proxy server
+  [default]         #domains below will use the config of this interface
   domain=ip,ip,...  #this domain will use these IPs
   domain            #this domain will be resolved by DNS
-```
-### Use DNS
-```
-  server=udp://8.8.8.8:53
-  server=tcp://8.8.8.8:53
-  server=tls://8.8.8.8:853
-  server=https://cloudflare-dns.com/dns-query
-  server=tfo://8.8.8.8:53 #Linux
-  server=udp://8.8.8.8:53/?ecs=35.190.247.1
-```
-### Use Proxy
-```
-  server=http://hostname:port                     #http proxy server
-  server=socks://hostname:port                    #socks5 proxy server
-  server=ss://method:password@hostname:port       #shadowsocks proxy server
+  domain=[domain]   #this domain will use the config of this domain
+  domain=domain     #this domain will use the addresses of this domain
+  
+  [dot]             #domains below will use the config of dot
+  domain
+  [socks5]          #domains below will use the config of socks5
+  domain
 ```
 ## Installation
 go get github.com/macronut/phantomsocks
