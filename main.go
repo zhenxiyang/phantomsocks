@@ -255,7 +255,7 @@ func main() {
 
 	if len(os.Args) > 1 {
 		flag.IntVar(&LogLevel, "log", 0, "LogLevel")
-		flag.IntVar(&MaxProcs, "maxprocs", 0, "LogLevel")
+		flag.IntVar(&MaxProcs, "maxprocs", 0, "MaxProcesses")
 		flag.BoolVar(&PassiveMode, "passive", false, "PassiveMode")
 		flag.BoolVar(&flagServiceInstall, "install", false, "Install service")
 		flag.BoolVar(&flagServiceRemove, "remove", false, "Remove service")
