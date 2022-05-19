@@ -34,6 +34,17 @@ type InterfaceConfig struct {
 	KeepAlive    int    `json:"keepalive,omitempty"`
 }
 
+const (
+	DIRECT    = 0x0
+	REDIRECT  = 0x1
+	NAT64     = 0x2
+	HTTP      = 0x3
+	HTTPS     = 0x4
+	SOCKS4    = 0x5
+	SOCKS5    = 0x6
+	WIREGUARD = 0x7
+)
+
 type PhantomInterface struct {
 	Device string
 	DNS    string
@@ -42,7 +53,7 @@ type PhantomInterface struct {
 	TTL    byte
 	MAXTTL byte
 
-	Protocol string
+	Protocol byte
 	Address  string
 	TNet     *netstack.Net
 }
@@ -388,7 +399,12 @@ func HttpMove(conn net.Conn, host string, b []byte) bool {
 	return true
 }
 
-func DialStrip(host string, fronting string) (*tls.Conn, error) {
+func (server *PhantomInterface) DialStrip(host string, fronting string) (*tls.Conn, error) {
+	addr, err := server.ResolveTCPAddr(host, 443)
+	if err != nil {
+		return nil, err
+	}
+
 	var conf *tls.Config
 	if fronting == "" {
 		conf = &tls.Config{
@@ -401,8 +417,7 @@ func DialStrip(host string, fronting string) (*tls.Conn, error) {
 		}
 	}
 
-	conn, err := tls.Dial("tcp", net.JoinHostPort(host, "443"), conf)
-	return conn, err
+	return tls.Dial("tcp", addr.String(), conf)
 }
 
 func getMyIPv6() net.IP {
@@ -486,7 +501,7 @@ func LoadConfig(filename string) error {
 							ip := net.ParseIP(keys[0])
 							var records *DNSRecords
 							records = new(DNSRecords)
-							if CurrentInterface.Hint != 0 || CurrentInterface.Protocol != "" {
+							if CurrentInterface.Hint != 0 || CurrentInterface.Protocol != 0 {
 								records.Index = len(Nose)
 								records.Hint = uint(CurrentInterface.Hint)
 								Nose = append(Nose, keys[0])
@@ -553,7 +568,7 @@ func LoadConfig(filename string) error {
 								if ip != nil {
 									DomainMap[ip.String()] = CurrentInterface
 								} else {
-									if CurrentInterface.DNS != "" || CurrentInterface.Protocol != "" {
+									if CurrentInterface.DNS != "" || CurrentInterface.Protocol != 0 {
 										DomainMap[keys[0]] = CurrentInterface
 										records := new(DNSRecords)
 										DNSCache.Store(keys[0], records)
@@ -709,10 +724,30 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 				Device: config.Device,
 				DNS:    config.DNS,
 
-				Protocol: config.Protocol,
+				Protocol: WIREGUARD,
 				TNet:     tnet,
 			}
 		} else {
+			var protocol byte
+			switch config.Protocol {
+			case "direct":
+				protocol = DIRECT
+			case "redirect":
+				protocol = REDIRECT
+			case "nat64":
+				protocol = NAT64
+			case "http":
+				protocol = HTTP
+			case "https":
+				protocol = HTTPS
+			case "socks4":
+				protocol = SOCKS4
+			case "socks5":
+				protocol = SOCKS5
+			case "socks":
+				protocol = SOCKS5
+			}
+
 			InterfaceMap[config.Name] = PhantomInterface{
 				Device: config.Device,
 				DNS:    config.DNS,
@@ -721,7 +756,7 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 				TTL:    byte(config.TTL),
 				MAXTTL: byte(config.MAXTTL),
 
-				Protocol: config.Protocol,
+				Protocol: protocol,
 				Address:  config.Address,
 			}
 		}

@@ -72,7 +72,7 @@ func TProxyUDP(address string) {
 
 		var remoteConn net.Conn = nil
 		var proxyConn net.Conn = nil
-		if server.Protocol != "" {
+		if server.Protocol != 0 {
 			remoteAddress := net.JoinHostPort(host, strconv.Itoa(dstAddr.Port))
 			remoteConn, proxyConn, err = server.DialProxyUDP(remoteAddress)
 		} else {

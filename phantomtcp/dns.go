@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"net/url"
 	"strconv"
@@ -40,11 +42,8 @@ func TCPlookup(request []byte, address string, server *PhantomInterface) ([]byte
 	var conn net.Conn
 	var err error = nil
 	if server != nil {
-		addr, err := net.ResolveTCPAddr("tcp", address)
-		if err != nil {
-			return nil, err
-		}
-		conn, err = server.Dial([]net.IP{addr.IP}, addr.Port, data[:len(request)+2])
+		host, port := splitHostPort(address)
+		conn, err = server.Dial(host, port, data[:len(request)+2])
 		if err != nil {
 			return nil, err
 		}
@@ -970,7 +969,7 @@ func NSRequest(request []byte, cache bool) []byte {
 	}
 
 	if DNS == "" {
-		if records.Index == 0 && server.Protocol != "" {
+		if records.Index == 0 && server.Protocol != 0 {
 			NoseLock.Lock()
 			records.Index = len(Nose)
 			Nose = append(Nose, name)
@@ -1026,7 +1025,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		return nil
 	}
 
-	if records.Index == 0 && (records.Hint != 0 || server.Protocol != "") {
+	if records.Index == 0 && (records.Hint != 0 || server.Protocol != 0) {
 		NoseLock.Lock()
 		records.Index = len(Nose)
 		Nose = append(Nose, name)
@@ -1051,4 +1050,38 @@ func NSRequest(request []byte, cache bool) []byte {
 	}
 
 	return records.BuildResponse(request, qtype, 0)
+}
+
+func (server *PhantomInterface) ResolveTCPAddr(host string, port int) (*net.TCPAddr, error) {
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return &net.TCPAddr{IP: ip, Port: port}, nil
+	}
+
+	_, addrs := NSLookup(host, server.Hint, server.DNS)
+	if len(addrs) == 0 {
+		return nil, errors.New("no such host")
+	}
+	rand.Seed(time.Now().UnixNano())
+	return &net.TCPAddr{IP: addrs[rand.Intn(len(addrs))], Port: port}, nil
+}
+
+func (server *PhantomInterface) ResolveTCPAddrs(host string, port int) ([]*net.TCPAddr, error) {
+	ip := net.ParseIP(host)
+	if ip != nil {
+		tcpAddrs := make([]*net.TCPAddr, 1)
+		tcpAddrs[0] = &net.TCPAddr{IP: ip, Port: port}
+		return tcpAddrs, nil
+	}
+
+	_, addrs := NSLookup(host, server.Hint, server.DNS)
+	if len(addrs) == 0 {
+		return nil, errors.New("no such host")
+	}
+	tcpAddrs := make([]*net.TCPAddr, len(addrs))
+	for i, addr := range addrs {
+		tcpAddrs[i] = &net.TCPAddr{IP: addr, Port: port}
+	}
+
+	return tcpAddrs, nil
 }

@@ -86,9 +86,7 @@ func (server *PhantomInterface) DialProxyUDP(address string) (net.Conn, net.Conn
 	var tcpConn net.Conn = nil
 
 	switch server.Protocol {
-	case "socks":
-		fallthrough
-	case "socks5":
+	case SOCKS5:
 		var proxy_seq uint32 = 0
 		var synpacket *ConnectionInfo
 		var hint uint32 = 0
@@ -183,13 +181,13 @@ func (server *PhantomInterface) DialProxyUDP(address string) (net.Conn, net.Conn
 		}
 		udpConn, err := net.DialUDP("udp", nil, &udpAddr)
 		return udpConn, tcpConn, err
-	case "redirect":
+	case REDIRECT:
 		if proxyport == 0 {
 			proxyhost = net.JoinHostPort(proxyaddr, strconv.Itoa(port))
 		}
 		udpConn, err := net.Dial("udp", proxyhost)
 		return udpConn, nil, err
-	case "nat64":
+	case NAT64:
 		proxyhost = net.JoinHostPort(proxyaddr+host, strconv.Itoa(port))
 		udpConn, err := net.Dial("udp", proxyhost)
 		return udpConn, nil, err

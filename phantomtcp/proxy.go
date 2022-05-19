@@ -30,6 +30,7 @@ func SocksProxy(client net.Conn) {
 	defer client.Close()
 
 	var conn net.Conn
+	var server *PhantomInterface
 	{
 		var b [1500]byte
 		n, err := client.Read(b[:])
@@ -56,6 +57,14 @@ func SocksProxy(client net.Conn) {
 				}
 				ip = net.IP(b[:4])
 				port = int(binary.BigEndian.Uint16(b[4:6]))
+
+				var ok bool
+				server, ok = DomainMap[ip.String()]
+				if ok && server == nil {
+					// 0x02: connection not allowed by ruleset
+					client.Write([]byte{5, 2, 0, 1, 0, 0, 0, 0, 0, 0})
+					return
+				}
 			case 0x03: //Domain
 				n, err = client.Read(b[:])
 				addrLen := b[0]
@@ -64,6 +73,12 @@ func SocksProxy(client net.Conn) {
 				}
 				host = string(b[1 : addrLen+1])
 				port = int(binary.BigEndian.Uint16(b[n-2:]))
+				server = ConfigLookup(host)
+				if server == nil {
+					// 0x02: connection not allowed by ruleset
+					client.Write([]byte{5, 2, 0, 1, 0, 0, 0, 0, 0, 0})
+					return
+				}
 			case 0x04: //IPv6
 				n, err = client.Read(b[:])
 				if n < 18 {
@@ -71,8 +86,17 @@ func SocksProxy(client net.Conn) {
 				}
 				ip = net.IP(b[:16])
 				port = int(binary.BigEndian.Uint16(b[16:18]))
+
+				var ok bool
+				server, ok = DomainMap[ip.String()]
+				if ok && server == nil {
+					// 0x02: connection not allowed by ruleset
+					client.Write([]byte{5, 2, 0, 1, 0, 0, 0, 0, 0, 0})
+					return
+				}
 			default:
-				logPrintln(1, "not supported")
+				// 0x08: address type not supported
+				client.Write([]byte{5, 9, 0, 1, 0, 0, 0, 0, 0, 0})
 				return
 			}
 			reply = []byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0}
@@ -90,11 +114,16 @@ func SocksProxy(client net.Conn) {
 					}
 				} else {
 					if b[4] == VirtualAddrPrefix {
-						index := int(binary.BigEndian.Uint32(b[6:8]))
+						index := int(binary.BigEndian.Uint16(b[6:8]))
 						if index >= len(Nose) {
 							return
 						}
 						host = Nose[index]
+						server = ConfigLookup(host)
+						if server == nil {
+							client.Write([]byte{5, 2, 0, 1, 0, 0, 0, 0, 0, 0})
+							return
+						}
 					} else {
 						ip = net.IP(b[4:8])
 					}
@@ -115,7 +144,6 @@ func SocksProxy(client net.Conn) {
 		}
 
 		if host != "" {
-			server := ConfigLookup(host)
 			if server.Hint == 0 {
 				logPrintln(1, "Socks:", host, port, server)
 				addr := net.JoinHostPort(host, strconv.Itoa(port))
@@ -126,13 +154,8 @@ func SocksProxy(client net.Conn) {
 					return
 				}
 				_, err = client.Write(reply)
-			} else if server.Protocol == "" {
+			} else {
 				logPrintln(1, "Socks:", host, port, server)
-				_, ips := NSLookup(host, server.Hint, server.DNS)
-				if len(ips) == 0 {
-					logPrintln(1, host, "no such host")
-					return
-				}
 				_, err = client.Write(reply)
 				if err != nil {
 					logPrintln(1, err)
@@ -156,19 +179,20 @@ func SocksProxy(client net.Conn) {
 						HttpMove(client, server.Address, b[:n])
 						return
 					} else if server.Hint&OPT_STRIP != 0 {
-						rand.Seed(time.Now().UnixNano())
-						ipaddr := ips[rand.Intn(len(ips))]
 						if server.Hint&OPT_FRONTING != 0 {
+							conn, err = server.DialStrip(host, "")
 							host = ""
+						} else {
+							conn, err = server.DialStrip(host, host)
 						}
-						conn, err = DialStrip(ipaddr.String(), host)
+
 						if err != nil {
 							logPrintln(1, err)
 							return
 						}
 						_, err = conn.Write(b[:n])
 					} else {
-						conn, err = server.HTTP(client, ips, port, b[:n])
+						conn, err = server.HTTP(client, host, port, b[:n])
 						if err != nil {
 							logPrintln(1, err)
 							return
@@ -177,78 +201,42 @@ func SocksProxy(client net.Conn) {
 						return
 					}
 				} else {
-					conn, err = server.Dial(ips, port, b[:n])
+					conn, err = server.Dial(host, port, b[:n])
 					if err != nil {
 						logPrintln(1, host, err)
 						return
 					}
-				}
-			} else {
-				logPrintln(1, "SocksoverProxy:", client.RemoteAddr(), "->", host, port, server)
-
-				if server.Hint&OPT_MODIFY != 0 {
-					_, err = client.Write(reply)
-					if err != nil {
-						conn.Close()
-						logPrintln(1, err)
-						return
-					}
-
-					n, err = client.Read(b[:])
-					if err != nil {
-						logPrintln(1, err)
-						return
-					}
-
-					conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), b[:n])
-				} else {
-					conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
-					if err != nil {
-						logPrintln(1, host, err)
-						return
-					}
-
-					_, err = client.Write(reply)
 				}
 			}
 		} else {
-			if ip.To4() != nil {
-				server := ConfigLookup(ip.String())
-				addr := net.TCPAddr{IP: ip, Port: port, Zone: ""}
-				if server.Hint != 0 {
-					logPrintln(1, "Socks:", addr.IP.String(), addr.Port, server)
-					client.Write(reply)
-					n, err = client.Read(b[:])
-					if err != nil {
-						logPrintln(1, err)
-						return
-					}
+			if server != nil {
+				host = ip.String()
+				logPrintln(1, "Socks:", host, port, server)
+				client.Write(reply)
+				n, err = client.Read(b[:])
+				if err != nil {
+					logPrintln(1, err)
+					return
+				}
 
-					ip := addr.IP
-					result, ok := DNSCache.Load(ip.String())
-					var addresses []net.IP
-					if ok {
-						records := result.(*DNSRecords)
-						if records.AAAA != nil {
-							addresses = make([]net.IP, len(records.AAAA.Addresses))
-							copy(addresses, records.AAAA.Addresses)
-						} else if records.A != nil {
-							addresses = make([]net.IP, len(records.A.Addresses))
-							copy(addresses, records.A.Addresses)
-						}
-					} else {
-						addresses = []net.IP{ip}
+				result, ok := DNSCache.Load(host)
+				var addresses []net.IP
+				if ok {
+					records := result.(*DNSRecords)
+					if records.AAAA != nil {
+						addresses = make([]net.IP, len(records.AAAA.Addresses))
+						copy(addresses, records.AAAA.Addresses)
+					} else if records.A != nil {
+						addresses = make([]net.IP, len(records.A.Addresses))
+						copy(addresses, records.A.Addresses)
 					}
-					conn, err = server.Dial(addresses, port, b[:n])
 				} else {
-					logPrintln(1, "Socks:", addr.IP.String(), addr.Port)
-
-					conn, err = net.DialTCP("tcp", nil, &addr)
-					client.Write(reply)
+					conn, err = server.Dial(host, port, b[:n])
 				}
 			} else {
+				logPrintln(1, "Socks:", ip, port)
+
 				addr := net.TCPAddr{IP: ip, Port: port, Zone: ""}
-				logPrintln(1, "Socks:", addr.IP.String(), addr.Port)
 				conn, err = net.DialTCP("tcp", nil, &addr)
 				client.Write(reply)
 			}
@@ -353,14 +341,8 @@ func SNIProxy(client net.Conn) {
 		if server.Hint != 0 {
 			logPrintln(1, "SNI:", host, port, server)
 
-			_, ips := NSLookup(host, server.Hint, server.DNS)
-			if len(ips) == 0 {
-				logPrintln(1, host, "no such host")
-				return
-			}
-
 			if b[0] == 0x16 {
-				conn, err = server.Dial(ips, port, b[:n])
+				conn, err = server.Dial(host, port, b[:n])
 				if err != nil {
 					logPrintln(1, host, err)
 					return
@@ -376,11 +358,13 @@ func SNIProxy(client net.Conn) {
 					HttpMove(client, server.Address, b[:n])
 					return
 				} else if server.Hint&OPT_STRIP != 0 {
-					ip := ips[rand.Intn(len(ips))]
 					if server.Hint&OPT_FRONTING != 0 {
+						conn, err = server.DialStrip(host, "")
 						host = ""
+					} else {
+						conn, err = server.DialStrip(host, host)
 					}
-					conn, err = DialStrip(ip.String(), host)
+
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -391,7 +375,7 @@ func SNIProxy(client net.Conn) {
 						return
 					}
 				} else {
-					conn, err = server.HTTP(client, ips, port, b[:n])
+					conn, err = server.HTTP(client, host, port, b[:n])
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -469,30 +453,7 @@ func RedirectProxy(client net.Conn) {
 			return
 		}
 
-		if server.Protocol != "" {
-			logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", host, port, server)
-
-			if server.Hint == OPT_NONE {
-				conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), nil)
-				if err != nil {
-					logPrintln(1, host, err)
-					return
-				}
-			} else {
-				var b [1500]byte
-				n, err := client.Read(b[:])
-				if err != nil {
-					logPrintln(1, err)
-					return
-				}
-
-				conn, err = server.DialProxy(net.JoinHostPort(host, strconv.Itoa(port)), b[:n])
-				if err != nil {
-					logPrintln(1, err)
-					return
-				}
-			}
-		} else if server.Hint != 0 {
+		if server.Protocol != 0 || server.Hint != 0 {
 			var b [1500]byte
 			n, err := client.Read(b[:])
 			if err != nil {
@@ -512,15 +473,7 @@ func RedirectProxy(client net.Conn) {
 					return
 				}
 
-				if ips == nil {
-					_, ips = NSLookup(host, server.Hint, server.DNS)
-					if len(ips) == 0 {
-						logPrintln(1, host, "no such host")
-						return
-					}
-				}
-
-				conn, err = server.Dial(ips, port, b[:n])
+				conn, err = server.Dial(host, port, b[:n])
 				if err != nil {
 					logPrintln(1, host, err)
 					return
@@ -545,11 +498,13 @@ func RedirectProxy(client net.Conn) {
 					HttpMove(client, server.Address, b[:n])
 					return
 				} else if server.Hint&OPT_STRIP != 0 {
-					ip := ips[rand.Intn(len(ips))]
 					if server.Hint&OPT_FRONTING != 0 {
+						conn, err = server.DialStrip(host, "")
 						host = ""
+					} else {
+						conn, err = server.DialStrip(host, host)
 					}
-					conn, err = DialStrip(ip.String(), host)
+
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -560,7 +515,7 @@ func RedirectProxy(client net.Conn) {
 						return
 					}
 				} else {
-					conn, err = server.HTTP(client, ips, port, b[:n])
+					conn, err = server.HTTP(client, host, port, b[:n])
 					if err != nil {
 						logPrintln(1, err)
 						return
@@ -724,7 +679,7 @@ func SocksUDPProxy(address string) {
 				}
 				host = Nose[index]
 				server := ConfigLookup(host)
-				if server.Protocol != "" {
+				if server.Protocol != 0 {
 					continue
 				}
 				if server.Hint&(OPT_UDP|OPT_HTTP3) == 0 {
