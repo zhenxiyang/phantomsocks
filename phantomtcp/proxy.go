@@ -2,24 +2,15 @@ package phantomtcp
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
-	"encoding/hex"
-	"errors"
-	"fmt"
 	"io"
 	"log"
 	"math/rand"
 	"net"
-	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
 )
 
 func ReadAtLeast() {
@@ -744,86 +735,4 @@ func SocksUDPProxy(address string) {
 			continue
 		}
 	}
-}
-
-func Base64ToHex(key string) (string, error) {
-	decoded, err := base64.StdEncoding.DecodeString(key)
-	if err != nil {
-		return "", errors.New("invalid base64 string: " + key)
-	}
-	if len(decoded) != 32 {
-		return "", errors.New("key should be 32 bytes: " + key)
-	}
-	return hex.EncodeToString(decoded), nil
-}
-
-func StartWireguard(config InterfaceConfig) (*netstack.Net, error) {
-	var Address []netip.Addr
-	for _, addr := range strings.Split(config.Address, ",") {
-		prefix, err := netip.ParsePrefix(addr)
-		if err != nil {
-			logPrintln(0, addr, err)
-			continue
-		}
-		Address = append(Address, prefix.Addr())
-	}
-	var DNS []netip.Addr
-	/*
-		for _, addr := range strings.Split(config.DNS, ",") {
-			prefix, err := netip.ParsePrefix(addr)
-			if err != nil {
-				logPrintln(0, addr, err)
-				continue
-			}
-			DNS = append(DNS, prefix.Addr())
-		}
-	*/
-	MTU := int(config.MTU)
-	tun, tnet, err := netstack.CreateNetTUN(Address, DNS, MTU)
-	if err != nil {
-		return nil, err
-	}
-	Logger := device.NewLogger(device.LogLevelSilent, "")
-	if LogLevel == 1 {
-		Logger = device.NewLogger(device.LogLevelError, "")
-	} else if LogLevel > 1 {
-		Logger = device.NewLogger(device.LogLevelVerbose, "")
-	}
-	dev := device.NewDevice(tun, conn.NewDefaultBind(), Logger)
-
-	PrivateKey, err := Base64ToHex(config.PrivateKey)
-	if err != nil {
-		return nil, err
-	}
-	PublicKey, err := Base64ToHex(config.PublicKey)
-	if err != nil {
-		return nil, err
-	}
-	PreSharedKey := "0000000000000000000000000000000000000000000000000000000000000000"
-	if config.PreSharedKey != "" {
-		PreSharedKey, err = Base64ToHex(config.PreSharedKey)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	ipcRequest := fmt.Sprintf(`private_key=%s
-public_key=%s
-endpoint=%s
-persistent_keepalive_interval=%d
-preshared_key=%s
-allowed_ip=0.0.0.0/0
-allowed_ip=::0/0`, PrivateKey, PublicKey, config.Endpoint, config.KeepAlive, PreSharedKey)
-
-	err = dev.IpcSet(ipcRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	err = dev.Up()
-	if err != nil {
-		return nil, err
-	}
-
-	return tnet, nil
 }

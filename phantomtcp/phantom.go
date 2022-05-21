@@ -16,6 +16,17 @@ import (
 	"golang.zx2c4.com/wireguard/tun/netstack"
 )
 
+type ServiceConfig struct {
+	Name       string `json:"name,omitempty"`
+	Device     string `json:"device,omitempty"`
+	MTU        int    `json:"mtu,omitempty"`
+	Protocol   string `json:"protocol,omitempty"`
+	Address    string `json:"address,omitempty"`
+	PrivateKey string `json:"privatekey,omitempty"`
+
+	Peers []WireGuardPeer `json:"peers,omitempty"`
+}
+
 type InterfaceConfig struct {
 	Name   string `json:"name,omitempty"`
 	Device string `json:"device,omitempty"`
@@ -25,13 +36,19 @@ type InterfaceConfig struct {
 	TTL    int    `json:"ttl,omitempty"`
 	MAXTTL int    `json:"maxttl,omitempty"`
 
-	Protocol     string `json:"protocol,omitempty"`
-	Address      string `json:"address,omitempty"`
-	PrivateKey   string `json:"privatekey,omitempty"`
+	Protocol   string `json:"protocol,omitempty"`
+	Address    string `json:"address,omitempty"`
+	PrivateKey string `json:"privatekey,omitempty"`
+
+	Peers []WireGuardPeer `json:"peers,omitempty"`
+}
+
+type WireGuardPeer struct {
 	PublicKey    string `json:"publickey,omitempty"`
 	PreSharedKey string `json:"presharedkey,omitempty"`
 	Endpoint     string `json:"endpoint,omitempty"`
 	KeepAlive    int    `json:"keepalive,omitempty"`
+	AllowedIPs   string `json:"allowedips,omitempty"`
 }
 
 const (

@@ -134,18 +134,14 @@ func StartService() {
 	conf.Close()
 
 	var ServiceConfig struct {
-		ConfigFiles       string                 `json:"config,omitempty"`
-		HostsFile         string                 `json:"hosts,omitempty"`
-		SocksListenAddr   string                 `json:"socks,omitempty"`
-		PacListenAddr     string                 `json:"pac,omitempty"`
-		SNIListenAddr     string                 `json:"sni,omitempty"`
-		RedirectAddr      string                 `json:"redir,omitempty"`
-		TProxyAddr        string                 `json:"tproxy,omitempty"`
-		SystemProxy       string                 `json:"proxy,omitempty"`
-		DnsListenAddr     string                 `json:"dns,omitempty"`
-		Clients           string                 `json:"clients,omitempty"`
-		VirtualAddrPrefix int                    `json:"vaddrprefix,omitempty"`
-		Interfaces        []ptcp.InterfaceConfig `json:"interfaces,omitempty"`
+		ConfigFiles       string `json:"config,omitempty"`
+		HostsFile         string `json:"hosts,omitempty"`
+		SystemProxy       string `json:"proxy,omitempty"`
+		Clients           string `json:"clients,omitempty"`
+		VirtualAddrPrefix int    `json:"vaddrprefix,omitempty"`
+
+		Services   []ptcp.ServiceConfig   `json:"services,omitempty"`
+		Interfaces []ptcp.InterfaceConfig `json:"interfaces,omitempty"`
 	}
 
 	err = json.Unmarshal(bytes, &ServiceConfig)
@@ -188,29 +184,34 @@ func StartService() {
 		}
 	}
 
-	if ServiceConfig.SocksListenAddr != "" {
-		fmt.Println("Socks:", ServiceConfig.SocksListenAddr)
-		go ListenAndServe(ServiceConfig.SocksListenAddr, ptcp.SocksProxy)
-		go ptcp.SocksUDPProxy(ServiceConfig.SocksListenAddr)
-		if ServiceConfig.PacListenAddr != "" {
-			go PACServer(ServiceConfig.PacListenAddr, ServiceConfig.SocksListenAddr)
+	default_socks := ""
+	for _, service := range ServiceConfig.Services {
+		switch service.Protocol {
+		case "dns":
+			go DNSServer(service.Address)
+		case "socks":
+			fmt.Println("Socks:", service.Address)
+			go ListenAndServe(service.Address, ptcp.SocksProxy)
+			go ptcp.SocksUDPProxy(service.Address)
+			default_socks = service.Address
+		case "redirect":
+			fmt.Println("Redirect:", service.Address)
+			go ListenAndServe(service.Address, ptcp.RedirectProxy)
+		case "tproxy":
+			fmt.Println("TProxy:", service.Address)
+			go ptcp.TProxyUDP(service.Address)
+		case "wireguard":
+			fmt.Println("WireGuard:", service.Address)
+
+		case "pac":
+			if default_socks != "" {
+				go PACServer(service.Address, default_socks)
+			}
+		case "sniproxy":
+			fmt.Println("SNI:", service.Address)
+			go ListenAndServe(service.Address, ptcp.SNIProxy)
+			go ptcp.QUICProxy(service.Address)
 		}
-	}
-
-	if ServiceConfig.SNIListenAddr != "" {
-		fmt.Println("SNI:", ServiceConfig.SNIListenAddr)
-		go ListenAndServe(ServiceConfig.SNIListenAddr, ptcp.SNIProxy)
-		go ptcp.QUICProxy(ServiceConfig.SNIListenAddr)
-	}
-
-	if ServiceConfig.RedirectAddr != "" {
-		fmt.Println("Redirect:", ServiceConfig.RedirectAddr)
-		go ListenAndServe(ServiceConfig.RedirectAddr, ptcp.RedirectProxy)
-	}
-
-	if ServiceConfig.TProxyAddr != "" {
-		fmt.Println("TProxy:", ServiceConfig.TProxyAddr)
-		go ptcp.TProxyUDP(ServiceConfig.TProxyAddr)
 	}
 
 	if ServiceConfig.SystemProxy != "" {
@@ -220,10 +221,6 @@ func StartService() {
 				fmt.Println(err)
 			}
 		}
-	}
-
-	if ServiceConfig.DnsListenAddr != "" {
-		go DNSServer(ServiceConfig.DnsListenAddr)
 	}
 
 	if ServiceConfig.VirtualAddrPrefix != 0 {
