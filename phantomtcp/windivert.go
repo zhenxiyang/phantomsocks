@@ -518,7 +518,7 @@ func RedirectDNS() {
 		server := ConfigLookup(qname)
 		if server != nil {
 			logPrintln(1, qname, server)
-			response := NSRequest(request, true)
+			_, response := NSRequest(request, true)
 			udpsize := len(response) + 8
 
 			var packetsize int

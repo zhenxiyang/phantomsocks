@@ -114,7 +114,7 @@ func DNSServer(listenAddr string) error {
 		request := make([]byte, n)
 		copy(request, data[:n])
 		go func(clientAddr *net.UDPAddr, request []byte) {
-			response := ptcp.NSRequest(request, true)
+			_, response := ptcp.NSRequest(request, true)
 			conn.WriteToUDP(response, clientAddr)
 		}(clientAddr, request)
 	}
@@ -202,7 +202,7 @@ func StartService() {
 			go ptcp.TProxyUDP(service.Address)
 		case "wireguard":
 			fmt.Println("WireGuard:", service.Address)
-
+			go ptcp.WireGuardServer(service)
 		case "pac":
 			if default_socks != "" {
 				go PACServer(service.Address, default_socks)

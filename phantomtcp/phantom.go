@@ -24,7 +24,7 @@ type ServiceConfig struct {
 	Address    string `json:"address,omitempty"`
 	PrivateKey string `json:"privatekey,omitempty"`
 
-	Peers []WireGuardPeer `json:"peers,omitempty"`
+	Peers []Peer `json:"peers,omitempty"`
 }
 
 type InterfaceConfig struct {
@@ -40,10 +40,10 @@ type InterfaceConfig struct {
 	Address    string `json:"address,omitempty"`
 	PrivateKey string `json:"privatekey,omitempty"`
 
-	Peers []WireGuardPeer `json:"peers,omitempty"`
+	Peers []Peer `json:"peers,omitempty"`
 }
 
-type WireGuardPeer struct {
+type Peer struct {
 	PublicKey    string `json:"publickey,omitempty"`
 	PreSharedKey string `json:"presharedkey,omitempty"`
 	Endpoint     string `json:"endpoint,omitempty"`
@@ -732,7 +732,7 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 		}
 
 		if config.Protocol == "wireguard" {
-			tnet, err := StartWireguard(config)
+			tnet, err := WireGuardClient(config)
 			if err != nil {
 				logPrintln(0, config, err)
 				continue

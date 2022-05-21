@@ -329,6 +329,9 @@ func SNIProxy(client net.Conn) {
 		}
 
 		server := ConfigLookup(host)
+		if server == nil {
+			return
+		}
 		if server.Hint != 0 {
 			logPrintln(1, "SNI:", host, port, server)
 
@@ -404,18 +407,25 @@ func SNIProxy(client net.Conn) {
 }
 
 func RedirectProxy(client net.Conn) {
+	addr, err := GetOriginalDST(client.(*net.TCPConn))
+	if err != nil {
+		logPrintln(1, err)
+		client.Close()
+		return
+	}
+
+	redirect(client, addr)
+}
+
+func redirect(client net.Conn, addr *net.TCPAddr) {
 	defer client.Close()
 
 	var conn net.Conn
+	var err error
 	{
 		var host string
 		var port int
 		var ips []net.IP = nil
-		addr, err := GetOriginalDST(client.(*net.TCPConn))
-		if err != nil {
-			logPrintln(1, err)
-			return
-		}
 
 		switch addr.IP[0] {
 		case 0x00:
@@ -531,7 +541,7 @@ func RedirectProxy(client net.Conn) {
 
 	defer conn.Close()
 
-	_, _, err := relay(client, conn)
+	_, _, err = relay(client, conn)
 	if err != nil {
 		if err, ok := err.(net.Error); ok && err.Timeout() {
 			return // ignore i/o timeout

@@ -908,11 +908,11 @@ func NSLookup(name string, hint uint32, server string) (int, []net.IP) {
 	return records.Index, answer.Addresses
 }
 
-func NSRequest(request []byte, cache bool) []byte {
+func NSRequest(request []byte, cache bool) (int, []byte) {
 	name, qtype, _ := GetQName(request)
 	if name == "" {
 		logPrintln(2, "DNS Segmentation fault")
-		return nil
+		return 0, nil
 	}
 
 	var records *DNSRecords
@@ -944,14 +944,14 @@ func NSRequest(request []byte, cache bool) []byte {
 	switch qtype {
 	case 1:
 		if records.A != nil {
-			return records.BuildResponse(request, qtype, 0)
+			return records.Index, records.BuildResponse(request, qtype, 0)
 		}
 	case 28:
 		if records.AAAA != nil {
-			return records.BuildResponse(request, qtype, 0)
+			return records.Index, records.BuildResponse(request, qtype, 0)
 		}
 	default:
-		return records.BuildResponse(request, qtype, 3600)
+		return records.Index, records.BuildResponse(request, qtype, 3600)
 	}
 
 	var response []byte
@@ -965,7 +965,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		logPrintln(2, "request:", name, server.DNS, server.Protocol)
 		DNS = server.DNS
 	} else {
-		return records.BuildResponse(request, qtype, 3600)
+		return 0, records.BuildResponse(request, qtype, 3600)
 	}
 
 	if DNS == "" {
@@ -975,22 +975,22 @@ func NSRequest(request []byte, cache bool) []byte {
 			Nose = append(Nose, name)
 			NoseLock.Unlock()
 		}
-		return records.BuildResponse(request, qtype, 3600)
+		return records.Index, records.BuildResponse(request, qtype, 3600)
 	}
 
 	u, err := url.Parse(DNS)
 	if err != nil {
 		logPrintln(1, err)
-		return nil
+		return 0, nil
 	}
 
 	if u.RawQuery != "" {
 		options = ParseOptions(u.RawQuery)
 
 		if options.Type == "A" && qtype == 28 {
-			return records.BuildResponse(request, qtype, 0)
+			return records.Index, records.BuildResponse(request, qtype, 0)
 		} else if options.Type == "AAAA" && qtype == 1 {
-			return records.BuildResponse(request, qtype, 0)
+			return records.Index, records.BuildResponse(request, qtype, 0)
 		}
 
 		_qtype := uint16(qtype)
@@ -1017,12 +1017,12 @@ func NSRequest(request []byte, cache bool) []byte {
 		response, err = TFOlookup(request, u.Host)
 	default:
 		logPrintln(1, "unknown protocol")
-		return nil
+		return 0, nil
 	}
 
 	if err != nil {
 		logPrintln(1, err)
-		return nil
+		return 0, nil
 	}
 
 	if records.Index == 0 && (records.Hint != 0 || server.Protocol != 0) {
@@ -1033,7 +1033,7 @@ func NSRequest(request []byte, cache bool) []byte {
 	}
 	answer := getAnswers(response)
 	if answer == nil {
-		return records.BuildResponse(request, qtype, 0)
+		return 0, records.BuildResponse(request, qtype, 0)
 	}
 
 	if options.PD != "" {
@@ -1049,7 +1049,7 @@ func NSRequest(request []byte, cache bool) []byte {
 		records.AAAA = answer
 	}
 
-	return records.BuildResponse(request, qtype, 0)
+	return records.Index, records.BuildResponse(request, qtype, 0)
 }
 
 func (server *PhantomInterface) ResolveTCPAddr(host string, port int) (*net.TCPAddr, error) {
