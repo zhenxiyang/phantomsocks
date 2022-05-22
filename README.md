@@ -22,11 +22,30 @@ Usage of ./phantomsocks:
 ```
 {
     "config": "1.conf,2.conf,3.conf",
-    "socks": "address:port",
-    "dns": "address:port",
-    "redir": ":port",
     "vaddrprefix": 6,
     "proxy": "socks://address:port",
+    "services": [
+        {
+            "name": "dns",
+            "protocol": "dns",
+            "address": "127.0.0.1:5353"
+        },
+        {
+            "name": "socks",
+            "protocol": "socks",
+            "address": "127.0.0.1:1081"
+        },
+        {
+            "name": "redirect",
+            "protocol": "redirect",
+            "address": "0.0.0.0:6"
+        },
+        {
+            "name": "tproxy",
+            "protocol": "tproxy",
+            "address": "0.0.0.0:6"
+        }
+    ],
     "interfaces": [
         {
             "name": "default",
@@ -66,37 +85,63 @@ Usage of ./phantomsocks:
 ```
 ### Socks:
 ```
-Linux:
-edit config.json set socks as 127.0.0.1:1080
-run phantomsocks
-
 Windows(windivert):
-edit config.json
-    "socks": "127.0.0.1:1080",
+config.json:
     "proxy" :"socks://127.0.0.1:1080/?dns=127.0.0.1"
-run phantomsocks
+    "services": [
+        {
+            "name": "DNS",
+            "protocol": "dns",
+            "address": "127.0.0.1:53"
+        },
+        {
+            "name": "Socks",
+            "protocol": "socks",
+            "address": "127.0.0.1:1080"
+        }
+    ]
 
 macOS:
-edit config.json
-    "socks": "127.0.0.1:1080",
-    "proxy": "socks://127.0.0.1:1080"
-run phantomsocks
+config.json:
+    "proxy": "socks://127.0.0.1:1080",
+    "services": [
+        {
+            "name": "Socks",
+            "protocol": "socks",
+            "address": "127.0.0.1:1080"
+        }
+    ]
 ```
 ### Redirect:
 ```
 Linux:
 iptables -t nat -A OUTPUT -d 6.0.0.0/8 -p tcp -j REDIRECT --to-port 6
-edit config.json
-    "redir": ":6",
-    "vaddrprefix": 6
-run phantomsocks
+config.json:
+    "vaddrprefix": 6,
+    "services": [
+        {
+            "name": "DNS",
+            "protocol": "dns",
+            "address": "127.0.0.1:53"
+        },
+        {
+            "name": "Redirect",
+            "protocol": "redirect",
+            "address": "0.0.0.0:6"
+        }
+    ]
 
 Windows(windivert):
-edit config.json
-    "redir": ":6",
+config.json:
     "vaddrprefix": 6,
     "proxy": "redirect://0.0.0.0:6"
-run phantomsocks
+    "services": [
+        {
+            "name": "Redirect",
+            "protocol": "redirect",
+            "address": "0.0.0.0:6"
+        }
+    ]
 ```
 
 ### Rules
