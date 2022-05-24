@@ -571,6 +571,8 @@ func LoadConfig(filename string) error {
 						if ok {
 							CurrentInterface = &face
 							logPrintln(1, keys[0], CurrentInterface)
+						} else {
+							logPrintln(1, keys[0], "invalid interface")
 						}
 					} else {
 						addr, err := net.ResolveTCPAddr("tcp", keys[0])

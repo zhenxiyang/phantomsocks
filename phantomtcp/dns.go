@@ -43,7 +43,7 @@ func TCPlookup(request []byte, address string, server *PhantomInterface) ([]byte
 	var err error = nil
 	if server != nil {
 		host, port := splitHostPort(address)
-		conn, err = server.Dial(host, port, data[:len(request)+2])
+		conn, _, err = server.Dial(host, port, data[:len(request)+2])
 		if err != nil {
 			return nil, err
 		}

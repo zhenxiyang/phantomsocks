@@ -3,7 +3,6 @@ package phantomtcp
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -183,16 +182,20 @@ func SocksProxy(client net.Conn) {
 						}
 						_, err = conn.Write(b[:n])
 					} else {
-						conn, err = server.HTTP(client, host, port, b[:n])
+						var info *ConnectionInfo
+						conn, info, err = server.Dial(host, port, b[:n])
 						if err != nil {
-							logPrintln(1, err)
+							logPrintln(1, host, err)
 							return
 						}
-						io.Copy(client, conn)
-						return
+
+						if info != nil {
+							server.Keep(client, conn, info)
+							return
+						}
 					}
 				} else {
-					conn, err = server.Dial(host, port, b[:n])
+					conn, _, err = server.Dial(host, port, b[:n])
 					if err != nil {
 						logPrintln(1, host, err)
 						return
@@ -222,7 +225,7 @@ func SocksProxy(client net.Conn) {
 						copy(addresses, records.A.Addresses)
 					}
 				} else {
-					conn, err = server.Dial(host, port, b[:n])
+					conn, _, err = server.Dial(host, port, b[:n])
 				}
 			} else {
 				logPrintln(1, "Socks:", ip, port)
@@ -336,7 +339,7 @@ func SNIProxy(client net.Conn) {
 			logPrintln(1, "SNI:", host, port, server)
 
 			if b[0] == 0x16 {
-				conn, err = server.Dial(host, port, b[:n])
+				conn, _, err = server.Dial(host, port, b[:n])
 				if err != nil {
 					logPrintln(1, host, err)
 					return
@@ -369,13 +372,17 @@ func SNIProxy(client net.Conn) {
 						return
 					}
 				} else {
-					conn, err = server.HTTP(client, host, port, b[:n])
+					var info *ConnectionInfo
+					conn, info, err = server.Dial(host, port, b[:n])
 					if err != nil {
-						logPrintln(1, err)
+						logPrintln(1, host, err)
 						return
 					}
-					io.Copy(client, conn)
-					return
+
+					if info != nil {
+						server.Keep(client, conn, info)
+						return
+					}
 				}
 			}
 		} else {
@@ -474,20 +481,12 @@ func redirect(client net.Conn, addr *net.TCPAddr) {
 					return
 				}
 
-				conn, err = server.Dial(host, port, b[:n])
+				conn, _, err = server.Dial(host, port, b[:n])
 				if err != nil {
 					logPrintln(1, host, err)
 					return
 				}
 			} else {
-				if ips == nil {
-					_, ips = NSLookup(host, server.Hint, server.DNS)
-					if len(ips) == 0 {
-						logPrintln(1, host, "no such host")
-						return
-					}
-				}
-
 				logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
 				if server.Hint&OPT_HTTP3 != 0 {
 					HttpMove(client, "h3", b[:n])
@@ -516,13 +515,17 @@ func redirect(client net.Conn, addr *net.TCPAddr) {
 						return
 					}
 				} else {
-					conn, err = server.HTTP(client, host, port, b[:n])
+					var info *ConnectionInfo
+					conn, info, err = server.Dial(host, port, b[:n])
 					if err != nil {
-						logPrintln(1, err)
+						logPrintln(1, host, err)
 						return
 					}
-					io.Copy(client, conn)
-					return
+
+					if info != nil {
+						server.Keep(client, conn, info)
+						return
+					}
 				}
 			}
 		} else if ips != nil {

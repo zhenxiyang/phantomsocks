@@ -145,10 +145,10 @@ func GetLocalAddr(name string, ipv6 bool) (*net.TCPAddr, error) {
 	return nil, nil
 }
 
-func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn, error) {
+func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn, *ConnectionInfo, error) {
 	raddrs, err := server.GetRemoteAddresses(host, port)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var conn net.Conn
@@ -162,7 +162,7 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 			_, err = conn.Write(b)
 		}
 
-		return conn, err
+		return conn, nil, err
 	}
 
 	device := server.Device
@@ -174,10 +174,13 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 			if server.Hint&OPT_TFO != 0 {
 				length = len(b)
 			} else {
-				offset, length = GetSNI(b)
+				if b[0] == 0x16 {
+					offset, length = GetSNI(b)
+				} else {
+					offset, length = GetHost(b)
+				}
 			}
 		}
-
 	}
 
 	if PassiveMode || length == 0 {
@@ -187,20 +190,20 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 		if device != "" {
 			laddr, err = GetLocalAddr(device, raddr.IP.To4() == nil)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
 		conn, err = net.DialTCP("tcp", laddr, raddr)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if server.Protocol != 0 {
 			server.ProxyHandshake(conn, nil, host, port)
 			if err != nil {
 				conn.Close()
-				return nil, err
+				return nil, nil, err
 			}
 		}
 
@@ -227,7 +230,7 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 			}
 		}
 
-		return conn, err
+		return conn, nil, err
 	} else {
 		rand.Seed(time.Now().UnixNano())
 
@@ -279,7 +282,7 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 
 			laddr, err := GetLocalAddr(device, raddr.IP.To4() == nil)
 			if err != nil {
-				return nil, errors.New("invalid device")
+				return nil, nil, errors.New("invalid device")
 			}
 
 			conn, synpacket, err = DialConnInfo(laddr, raddr, server, tfo_payload)
@@ -287,7 +290,7 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 				if IsNormalError(err) {
 					continue
 				}
-				return nil, err
+				return nil, nil, err
 			}
 
 			break
@@ -297,7 +300,7 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 			if conn != nil {
 				conn.Close()
 			}
-			return nil, errors.New("connection does not exist")
+			return nil, nil, errors.New("connection does not exist")
 		}
 
 		synpacket.TCP.Seq++
@@ -306,11 +309,11 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 			err = server.ProxyHandshake(conn, synpacket, host, port)
 			if err != nil {
 				conn.Close()
-				return nil, err
+				return nil, nil, err
 			}
 			if server.Protocol == HTTPS {
 				conn.Write(b)
-				return conn, nil
+				return conn, synpacket, nil
 			}
 		}
 
@@ -320,9 +323,10 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 				_, err = conn.Write(b[cut:])
 				if err != nil {
 					conn.Close()
-					return nil, err
+					return nil, nil, err
 				}
 			}
+			synpacket.TCP.Seq += uint32(len(b))
 		} else {
 			if server.Hint&OPT_MODE2 != 0 {
 				synpacket.TCP.Seq += uint32(cut)
@@ -332,7 +336,7 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 				err = ModifyAndSendPacket(synpacket, fakepayload, server.Hint, server.TTL, count)
 				if err != nil {
 					conn.Close()
-					return nil, err
+					return nil, nil, err
 				}
 			}
 
@@ -346,204 +350,89 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 				_, err = conn.Write(b[:SegOffset])
 				if err != nil {
 					conn.Close()
-					return nil, err
+					return nil, nil, err
 				}
 			}
 
 			_, err = conn.Write(b[SegOffset:cut])
 			if err != nil {
 				conn.Close()
-				return nil, err
+				return nil, nil, err
 			}
 
 			err = ModifyAndSendPacket(synpacket, fakepayload, server.Hint, server.TTL, count)
 			if err != nil {
 				conn.Close()
-				return nil, err
+				return nil, nil, err
 			}
 
 			_, err = conn.Write(b[cut:])
 			if err != nil {
 				conn.Close()
-				return nil, err
+				return nil, nil, err
 			}
 
+			synpacket.TCP.Seq += uint32(len(b))
 			if server.Hint&OPT_SAT != 0 {
-				synpacket.TCP.Seq += uint32(len(b))
 				_, err = rand.Read(fakepayload)
 				if err != nil {
 					conn.Close()
-					return nil, err
+					return nil, nil, err
 				}
 				err = ModifyAndSendPacket(synpacket, fakepayload, server.Hint, server.TTL, 2)
 			}
 		}
 
-		return conn, err
+		return conn, synpacket, err
 	}
 }
 
-func (server *PhantomInterface) HTTP(client net.Conn, host string, port int, b []byte) (net.Conn, error) {
-	var err error
-	var conn net.Conn
+func (server *PhantomInterface) Keep(client, conn net.Conn, connInfo *ConnectionInfo) {
+	fakepayload := make([]byte, 1500)
 
-	_, addrs := NSLookup(host, server.Hint, server.DNS)
-	if len(addrs) == 0 {
-		return nil, errors.New("no such host")
-	}
-
-	if b != nil {
-		offset, length := GetHost(b)
-
-		if length > 0 {
-			rand.Seed(time.Now().UnixNano())
-
-			fakepaylen := 1280
-			if len(b) < fakepaylen {
-				fakepaylen = len(b)
-			}
-			fakepayload := make([]byte, fakepaylen)
-			copy(fakepayload, b[:fakepaylen])
-
-			min_dot := offset + length
-			max_dot := offset
-			for i := offset; i < offset+length; i++ {
-				if fakepayload[i] == '.' {
-					if i < min_dot {
-						min_dot = i
-					}
-					if i > max_dot {
-						max_dot = i
-					}
-				} else {
-					fakepayload[i] = domainBytes[rand.Intn(len(domainBytes))]
-				}
-			}
-			if min_dot == max_dot {
-				min_dot = offset
-			}
-			cut := (min_dot + max_dot) / 2
-
-			var connInfo *ConnectionInfo
-			for i := 0; i < 5; i++ {
-				ip := addrs[rand.Intn(len(addrs))]
-
-				laddr, err := GetLocalAddr(server.Device, ip.To4() == nil)
-				if err != nil {
-					continue
-				}
-
-				raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-				conn, connInfo, err = DialConnInfo(laddr, raddr, server, nil)
-				logPrintln(2, ip, port, err)
-				if err != nil {
-					if IsNormalError(err) {
-						continue
-					}
-					return nil, err
-				}
-			}
-
-			if connInfo == nil {
-				return nil, errors.New("connection does not exist")
-			}
-
-			count := 1
-			if server.Hint&OPT_MODE2 == 0 {
-				err = ModifyAndSendPacket(connInfo, fakepayload, server.Hint, server.TTL, 1)
-				if err != nil {
-					conn.Close()
-					return nil, err
-				}
-			} else {
-				connInfo.TCP.Seq += uint32(cut)
-				fakepayload = fakepayload[cut:]
-				count = 2
-			}
-
-			_, err = conn.Write(b[:cut])
+	go func() {
+		var b [1460]byte
+		for {
+			n, err := client.Read(b[:])
 			if err != nil {
 				conn.Close()
-				return nil, err
+				return
 			}
 
-			err = ModifyAndSendPacket(connInfo, fakepayload, server.Hint, server.TTL, count)
+			err = ModifyAndSendPacket(connInfo, fakepayload, server.Hint, server.TTL, 2)
 			if err != nil {
 				conn.Close()
-				return nil, err
+				return
 			}
-
-			_, err = conn.Write(b[cut:])
+			_, err = conn.Write(b[:n])
 			if err != nil {
 				conn.Close()
-				return nil, err
+				return
 			}
-
-			connInfo.TCP.Seq += uint32(len(b))
-			go func() {
-				var b [1460]byte
-				for {
-					n, err := client.Read(b[:])
-					if err != nil {
-						conn.Close()
-						return
-					}
-
-					err = ModifyAndSendPacket(connInfo, fakepayload, server.Hint, server.TTL, 2)
-					if err != nil {
-						conn.Close()
-						return
-					}
-					_, err = conn.Write(b[:n])
-					if err != nil {
-						conn.Close()
-						return
-					}
-					connInfo.TCP.Seq += uint32(n)
-				}
-			}()
-
-			return conn, err
-		} else {
-			ip := addrs[rand.Intn(len(addrs))]
-
-			var laddr *net.TCPAddr = nil
-			if server.Device != "" {
-				laddr, err = GetLocalAddr(server.Device, ip.To4() == nil)
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-			conn, err = net.DialTCP("tcp", laddr, raddr)
-			if err != nil {
-				return nil, err
-			}
-			_, err = conn.Write(b)
-			if err != nil {
-				conn.Close()
-				return conn, err
-			}
-			go io.Copy(conn, client)
-			return conn, err
+			connInfo.TCP.Seq += uint32(n)
 		}
-	}
+	}()
 
-	ip := addrs[rand.Intn(len(addrs))]
-	raddr := &net.TCPAddr{IP: ip, Port: port, Zone: ""}
-	conn, err = net.DialTCP("tcp", nil, raddr)
-	if err != nil {
-		return conn, err
-	}
-
-	go io.Copy(conn, client)
-	return conn, err
+	io.Copy(client, conn)
 }
 
 func (server *PhantomInterface) GetRemoteAddresses(host string, port int) ([]*net.TCPAddr, error) {
 	switch server.Protocol {
 	case DIRECT:
+		return server.ResolveTCPAddrs(host, port)
+	case REDIRECT:
+		if server.Address != "" {
+			var str_port string
+			var err error
+			host, str_port, err = net.SplitHostPort(server.Address)
+			if err != nil {
+				return nil, err
+			}
+			port, err = strconv.Atoi(str_port)
+			if err != nil {
+				return nil, err
+			}
+		}
 		return server.ResolveTCPAddrs(host, port)
 	case NAT64:
 		addrs, err := server.ResolveTCPAddrs(host, port)
