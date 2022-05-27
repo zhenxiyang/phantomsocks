@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"net"
-	"strconv"
 
 	"github.com/macronut/go-tproxy"
 )
@@ -36,6 +35,7 @@ func TProxyUDP(address string) {
 			if dstIP4[0] == VirtualAddrPrefix {
 				index := int(binary.BigEndian.Uint16(dstIP4[2:4]))
 				if index >= len(Nose) {
+					logPrintln(4, "TProxy(UDP):", srcAddr, "->", dstAddr, "out of range")
 					continue
 				}
 				host = Nose[index]
@@ -45,6 +45,7 @@ func TProxyUDP(address string) {
 		} else if dstAddr.IP[0] == 0 {
 			index := int(binary.BigEndian.Uint32(dstAddr.IP[12:16]))
 			if index >= len(Nose) {
+				logPrintln(4, "TProxy(UDP):", srcAddr, "->", dstAddr, "out of range")
 				continue
 			}
 			host = Nose[index]
@@ -53,11 +54,13 @@ func TProxyUDP(address string) {
 		}
 
 		server := ConfigLookup(host)
-		if server.Hint&(OPT_UDP|OPT_HTTP3) == 0 {
-			continue
-		}
-		if server.Hint&(OPT_HTTP3) != 0 {
+		if server.Hint&OPT_UDP == 0 {
+			if server.Hint&(OPT_HTTP3) == 0 {
+				logPrintln(4, "TProxy(UDP):", srcAddr, "->", dstAddr, "not allow")
+				continue
+			}
 			if GetQUICVersion(data[:n]) == 0 {
+				logPrintln(4, "TProxy(UDP):", srcAddr, "->", dstAddr, "not h3")
 				continue
 			}
 		}
@@ -70,22 +73,7 @@ func TProxyUDP(address string) {
 			continue
 		}
 
-		var remoteConn net.Conn = nil
-		var proxyConn net.Conn = nil
-		if server.Protocol != 0 {
-			remoteAddress := net.JoinHostPort(host, strconv.Itoa(dstAddr.Port))
-			remoteConn, proxyConn, err = server.DialProxyUDP(remoteAddress)
-		} else {
-			_, ips := NSLookup(host, server.Hint, server.DNS)
-			if ips == nil {
-				localConn.Close()
-				continue
-			}
-
-			raddr := net.UDPAddr{IP: ips[0], Port: dstAddr.Port}
-			remoteConn, err = net.DialUDP("udp", nil, &raddr)
-		}
-
+		remoteConn, proxyConn, err := server.DialUDP(host, dstAddr.Port)
 		if err != nil {
 			logPrintln(1, err)
 			localConn.Close()

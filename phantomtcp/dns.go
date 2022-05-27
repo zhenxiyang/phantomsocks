@@ -950,6 +950,14 @@ func NSRequest(request []byte, cache bool) (int, []byte) {
 		if records.AAAA != nil {
 			return records.Index, records.BuildResponse(request, qtype, 0)
 		}
+	case 65:
+		if records.Index == 0 && records.Hint&OPT_UDP != 0 {
+			NoseLock.Lock()
+			records.Index = len(Nose)
+			Nose = append(Nose, name)
+			NoseLock.Unlock()
+		}
+		return records.Index, records.BuildResponse(request, qtype, 3600)
 	default:
 		return records.Index, records.BuildResponse(request, qtype, 3600)
 	}
@@ -965,6 +973,7 @@ func NSRequest(request []byte, cache bool) (int, []byte) {
 		logPrintln(2, "request:", name, server.DNS, server.Protocol)
 		DNS = server.DNS
 	} else {
+		logPrintln(4, "request:", name, "no answer")
 		return 0, records.BuildResponse(request, qtype, 3600)
 	}
 
@@ -984,6 +993,7 @@ func NSRequest(request []byte, cache bool) (int, []byte) {
 		return 0, nil
 	}
 
+	_request := request
 	if u.RawQuery != "" {
 		options = ParseOptions(u.RawQuery)
 
@@ -1000,21 +1010,21 @@ func NSRequest(request []byte, cache bool) (int, []byte) {
 
 		if options.ECS != "" || _qtype != uint16(qtype) {
 			id := binary.BigEndian.Uint16(request[:2])
-			request = PackRequest(name, _qtype, id, options.ECS)
+			_request = PackRequest(name, _qtype, id, options.ECS)
 		}
 	}
 
 	switch u.Scheme {
 	case "udp":
-		response, err = UDPlookup(request, u.Host)
+		response, err = UDPlookup(_request, u.Host)
 	case "tcp":
-		response, err = TCPlookup(request, u.Host, nil)
+		response, err = TCPlookup(_request, u.Host, nil)
 	case "tls":
-		response, err = TLSlookup(request, u.Host)
+		response, err = TLSlookup(_request, u.Host)
 	case "https":
-		response, err = HTTPSlookup(request, u, options.Domain)
+		response, err = HTTPSlookup(_request, u, options.Domain)
 	case "tfo":
-		response, err = TFOlookup(request, u.Host)
+		response, err = TFOlookup(_request, u.Host)
 	default:
 		logPrintln(1, "unknown protocol")
 		return 0, nil
@@ -1033,6 +1043,7 @@ func NSRequest(request []byte, cache bool) (int, []byte) {
 	}
 	answer := getAnswers(response)
 	if answer == nil {
+		logPrintln(4, "request:", name, "no answer")
 		return 0, records.BuildResponse(request, qtype, 0)
 	}
 

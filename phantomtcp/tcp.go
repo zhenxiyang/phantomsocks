@@ -303,6 +303,10 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 			return nil, nil, errors.New("connection does not exist")
 		}
 
+		if (server.Hint & OPT_DELAY) != 0 {
+			time.Sleep(time.Second)
+		}
+
 		synpacket.TCP.Seq++
 
 		if server.Protocol != 0 {

@@ -3,8 +3,8 @@ package phantomtcp
 import (
 	"encoding/binary"
 	"errors"
+	"math/rand"
 	"net"
-	"strconv"
 	"time"
 )
 
@@ -77,24 +77,29 @@ func relayUDP(left, right net.Conn) error {
 	return err
 }
 
-func (server *PhantomInterface) DialProxyUDP(address string) (net.Conn, net.Conn, error) {
-	proxy_err := errors.New("invalid proxy")
+func (server *PhantomInterface) DialUDP(host string, port int) (net.Conn, net.Conn, error) {
+	raddrs, err := server.GetRemoteAddresses(host, port)
+	if err != nil {
+		return nil, nil, err
+	}
+	raddr := raddrs[rand.Intn(len(raddrs))]
 
-	host, port := splitHostPort(address)
-	proxyhost := server.Address
-	proxyaddr, proxyport := splitHostPort(proxyhost)
+	proxy_err := errors.New("invalid proxy")
 	var tcpConn net.Conn = nil
 
 	switch server.Protocol {
+	case DIRECT:
+		fallthrough
+	case REDIRECT:
+		fallthrough
+	case NAT64:
+		udpConn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: raddr.IP, Port: raddr.Port})
+		return udpConn, nil, err
 	case SOCKS5:
 		var proxy_seq uint32 = 0
 		var synpacket *ConnectionInfo
 		var hint uint32 = 0
 
-		raddr, err := net.ResolveTCPAddr("tcp", proxyhost)
-		if err != nil {
-			return nil, nil, err
-		}
 		laddr, err := GetLocalAddr(server.Device, raddr.IP.To4() == nil)
 		if err != nil {
 			return nil, nil, err
@@ -181,15 +186,8 @@ func (server *PhantomInterface) DialProxyUDP(address string) (net.Conn, net.Conn
 		}
 		udpConn, err := net.DialUDP("udp", nil, &udpAddr)
 		return udpConn, tcpConn, err
-	case REDIRECT:
-		if proxyport == 0 {
-			proxyhost = net.JoinHostPort(proxyaddr, strconv.Itoa(port))
-		}
-		udpConn, err := net.Dial("udp", proxyhost)
-		return udpConn, nil, err
-	case NAT64:
-		proxyhost = net.JoinHostPort(proxyaddr+host, strconv.Itoa(port))
-		udpConn, err := net.Dial("udp", proxyhost)
+	case WIREGUARD:
+		udpConn, err := server.TNet.DialUDP(nil, &net.UDPAddr{IP: raddr.IP, Port: raddr.Port})
 		return udpConn, nil, err
 	}
 

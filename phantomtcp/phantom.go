@@ -97,8 +97,8 @@ const (
 
 	OPT_TFO   = 0x1 << 8
 	OPT_UDP   = 0x1 << 9
-	OPT_HTTP3 = 0x1 << 10
-	OPT_NOTCP = 0x1 << 11
+	OPT_NOTCP = 0x1 << 10
+	OPT_DELAY = 0x1 << 11
 
 	OPT_MODE2     = 0x1 << 12
 	OPT_DF        = 0x1 << 13
@@ -113,11 +113,13 @@ const (
 
 	OPT_HTTP     = 0x1 << 23
 	OPT_HTTPS    = 0x1 << 24
-	OPT_MOVE     = 0x1 << 25
-	OPT_STRIP    = 0x1 << 26
-	OPT_FRONTING = 0x1 << 27
-	OPT_IPV4     = 0x1 << 28
-	OPT_IPV6     = 0x1 << 29
+	OPT_HTTP3    = 0x1 << 25
+	OPT_MOVE     = 0x1 << 26
+	OPT_STRIP    = 0x1 << 27
+	OPT_FRONTING = 0x1 << 28
+
+	OPT_IPV4 = 0x1 << 30
+	OPT_IPV6 = 0x1 << 31
 )
 
 const OPT_FAKE = OPT_TTL | OPT_WMD5 | OPT_NACK | OPT_WACK | OPT_WCSUM | OPT_WSEQ | OPT_WTIME
@@ -136,8 +138,8 @@ var HintMap = map[string]uint32{
 
 	"tfo":    OPT_TFO,
 	"udp":    OPT_UDP,
-	"h3":     OPT_HTTP3,
 	"no-tcp": OPT_NOTCP,
+	"delay":  OPT_DELAY,
 
 	"mode2":      OPT_MODE2,
 	"df":         OPT_DF,
@@ -152,11 +154,13 @@ var HintMap = map[string]uint32{
 
 	"http":     OPT_HTTP,
 	"https":    OPT_HTTPS,
+	"h3":       OPT_HTTP3,
 	"move":     OPT_MOVE,
 	"strip":    OPT_STRIP,
 	"fronting": OPT_FRONTING,
-	"ipv4":     OPT_IPV4,
-	"ipv6":     OPT_IPV6,
+
+	"ipv4": OPT_IPV4,
+	"ipv6": OPT_IPV6,
 }
 
 var Logger *log.Logger
@@ -742,6 +746,7 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 			InterfaceMap[config.Name] = PhantomInterface{
 				Device: config.Device,
 				DNS:    config.DNS,
+				Hint:   Hint,
 
 				Protocol: WIREGUARD,
 				TNet:     tnet,

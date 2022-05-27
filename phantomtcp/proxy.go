@@ -458,6 +458,7 @@ func redirect(client net.Conn, addr *net.TCPAddr) {
 
 		server := ConfigLookup(host)
 		if server.Hint&OPT_NOTCP != 0 {
+			time.Sleep(time.Second)
 			return
 		}
 
