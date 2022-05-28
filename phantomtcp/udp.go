@@ -93,7 +93,15 @@ func (server *PhantomInterface) DialUDP(host string, port int) (net.Conn, net.Co
 	case REDIRECT:
 		fallthrough
 	case NAT64:
-		udpConn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: raddr.IP, Port: raddr.Port})
+		var laddr *net.UDPAddr = nil
+		if server.Device != "" {
+			_laddr, err := GetLocalAddr(server.Device, raddr.IP.To4() == nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			laddr = &net.UDPAddr{IP: _laddr.IP, Port: 0}
+		}
+		udpConn, err := net.DialUDP("udp", laddr, &net.UDPAddr{IP: raddr.IP, Port: raddr.Port})
 		return udpConn, nil, err
 	case SOCKS5:
 		var proxy_seq uint32 = 0

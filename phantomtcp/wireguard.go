@@ -5,9 +5,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/netip"
 	"strings"
+	"sync"
+	"time"
 
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
@@ -16,6 +19,8 @@ import (
 )
 
 func WireGuardServer(service ServiceConfig) {
+	var wgIPMap [65535]bool
+
 	laddr, err := net.ResolveUDPAddr("udp", service.Address)
 	if err != nil {
 		logPrintln(0, service, err)
@@ -28,8 +33,8 @@ func WireGuardServer(service ServiceConfig) {
 		logPrintln(0, service, err)
 	}
 
-	go func() {
-		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:443")
+	tcp_redirect := func(laddr string) {
+		addr, err := net.ResolveTCPAddr("tcp", laddr)
 		l, err := tnet.ListenTCP(addr)
 		if err != nil {
 			logPrintln(0, service, err)
@@ -44,23 +49,105 @@ func WireGuardServer(service ServiceConfig) {
 				go redirect(client, &net.TCPAddr{IP: addr.IP.To4(), Port: addr.Port})
 			}
 		}
-	}()
+	}
 
-	go func() {
-		addr, err := net.ResolveTCPAddr("tcp", "0.0.0.0:80")
-		l, err := tnet.ListenTCP(addr)
+	udp_redirect := func(address, host string, server *PhantomInterface) error {
+		laddr, err := net.ResolveUDPAddr("udp", address)
 		if err != nil {
-			logPrintln(0, service, err)
+			return err
 		}
-		for {
-			client, err := l.Accept()
-			if err != nil {
-				logPrintln(1, err)
-			}
-			go SNIProxy(client)
+		client, err := tnet.ListenUDP(laddr)
+		if err != nil {
+			return err
 		}
-	}()
+		defer client.Close()
 
+		var udpLock sync.Mutex
+		var udpMap map[string]net.Conn = make(map[string]net.Conn)
+		data := make([]byte, 1500)
+		for {
+			n, srcAddr, err := client.ReadFrom(data)
+			if err != nil {
+				continue
+			}
+
+			udpLock.Lock()
+			udpConn, ok := udpMap[srcAddr.String()]
+
+			if ok {
+				udpConn.Write(data[:n])
+				udpLock.Unlock()
+			} else {
+				udpLock.Unlock()
+				if server.Hint&OPT_UDP == 0 && server.Hint&(OPT_HTTP3) != 0 {
+					if GetQUICVersion(data[:n]) == 0 {
+						logPrintln(4, "Wiregurad(UDP):", srcAddr, "->", laddr, "not h3")
+						continue
+					}
+				}
+
+				logPrintln(1, "Wiregurad(UDP):", srcAddr, "->", host, laddr.Port, server)
+				remoteConn, proxyConn, err := server.DialUDP(host, laddr.Port)
+				if err != nil {
+					logPrintln(1, err)
+					continue
+				}
+				udpLock.Lock()
+				udpMap[srcAddr.String()] = remoteConn
+				udpLock.Unlock()
+
+				if server.Hint&OPT_ZERO != 0 {
+					zero_data := make([]byte, 8+rand.Intn(1024))
+					_, err = remoteConn.Write(zero_data)
+					if err != nil {
+						logPrintln(1, err)
+						remoteConn.Close()
+						if proxyConn != nil {
+							proxyConn.Close()
+						}
+						continue
+					}
+				}
+
+				_, err = remoteConn.Write(data[:n])
+
+				if err != nil {
+					logPrintln(1, err)
+					remoteConn.Close()
+					if proxyConn != nil {
+						proxyConn.Close()
+					}
+					continue
+				}
+
+				go func(srcAddr net.Addr, remoteConn net.Conn) {
+					data := make([]byte, 1500)
+					remoteConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
+					for {
+						n, err := remoteConn.Read(data)
+						if err != nil {
+							udpLock.Lock()
+							delete(udpMap, srcAddr.String())
+							udpLock.Unlock()
+							remoteConn.Close()
+							if proxyConn != nil {
+								proxyConn.Close()
+							}
+							return
+						}
+						remoteConn.SetReadDeadline(time.Now().Add(time.Minute * 2))
+						client.WriteTo(data[:n], srcAddr)
+					}
+				}(srcAddr, remoteConn)
+			}
+		}
+		return nil
+	}
+
+	go tcp_redirect("0.0.0.0:443")
+	go tcp_redirect("0.0.0.0:80")
+
+	wgIPMap[0] = true
 	l, err := tnet.ListenUDPAddrPort(netip.AddrPortFrom(netip.AddrFrom4(vaddr), 53))
 	if err != nil {
 		logPrintln(0, service, err)
@@ -76,7 +163,17 @@ func WireGuardServer(service ServiceConfig) {
 		index, response := NSRequest(buf[:n], true)
 		vaddr := [4]byte{VirtualAddrPrefix, 0, byte(index >> 8), byte(index & 0xFF)}
 		prefix := netip.PrefixFrom(netip.AddrFrom4(vaddr), 32)
-		netstack.AddAddress(tun, prefix.Addr())
+
+		if wgIPMap[index] == false {
+			netstack.AddAddress(tun, prefix.Addr())
+			wgIPMap[index] = true
+			host := Nose[index]
+			server := ConfigLookup(host)
+			if server.Hint&(OPT_UDP|OPT_HTTP3) != 0 {
+				dst := net.JoinHostPort(prefix.Addr().String(), "443")
+				go udp_redirect(dst, host, server)
+			}
+		}
 
 		l.WriteTo(response, raddr)
 	}
