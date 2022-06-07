@@ -744,12 +744,9 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 				continue
 			}
 			InterfaceMap[config.Name] = PhantomInterface{
-				Device: config.Device,
-				DNS:    config.DNS,
-				Hint:   Hint,
-
-				Protocol: WIREGUARD,
-				TNet:     tnet,
+				DNS:  config.DNS,
+				Hint: Hint,
+				TNet: tnet,
 			}
 		} else {
 			var protocol byte
@@ -772,21 +769,36 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 				protocol = SOCKS5
 			}
 
-			InterfaceMap[config.Name] = PhantomInterface{
-				Device: config.Device,
-				DNS:    config.DNS,
-				Hint:   Hint,
-				MTU:    uint16(config.MTU),
-				TTL:    byte(config.TTL),
-				MAXTTL: byte(config.MAXTTL),
+			pface, ok := InterfaceMap[config.Device]
+			if ok {
+				if pface.Protocol == WIREGUARD {
+					InterfaceMap[config.Name] = PhantomInterface{
+						DNS:  config.DNS,
+						Hint: Hint,
 
-				Protocol: protocol,
-				Address:  config.Address,
+						Protocol: protocol,
+						Address:  config.Address,
+						TNet:     pface.TNet,
+					}
+				} else {
+					logPrintln(1, "invalid interface: "+config.Device)
+				}
+			} else {
+				InterfaceMap[config.Name] = PhantomInterface{
+					Device: config.Device,
+					DNS:    config.DNS,
+					Hint:   Hint,
+					MTU:    uint16(config.MTU),
+					TTL:    byte(config.TTL),
+					MAXTTL: byte(config.MAXTTL),
+
+					Protocol: protocol,
+					Address:  config.Address,
+				}
+				if config.Device != "" && !contains(devices, config.Device) {
+					devices = append(devices, config.Device)
+				}
 			}
-		}
-
-		if config.Device != "" && !contains(devices, config.Device) {
-			devices = append(devices, config.Device)
 		}
 	}
 	logPrintln(1, InterfaceMap)

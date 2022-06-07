@@ -152,16 +152,24 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 	}
 
 	var conn net.Conn
-	if server.Protocol == WIREGUARD {
+	if server.TNet != nil {
 		if raddrs != nil {
 			conn, err = server.TNet.DialTCP(raddrs[rand.Intn(len(raddrs))])
 		} else {
 			conn, err = server.TNet.Dial("tcp", net.JoinHostPort(host, string(port)))
 		}
-		if err == nil {
-			_, err = conn.Write(b)
+		if err != nil {
+			conn.Close()
+			return nil, nil, err
 		}
 
+		server.ProxyHandshake(conn, nil, host, port)
+		if err != nil {
+			conn.Close()
+			return nil, nil, err
+		}
+
+		_, err = conn.Write(b)
 		return conn, nil, err
 	}
 
