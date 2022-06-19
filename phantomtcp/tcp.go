@@ -159,11 +159,10 @@ func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn,
 			conn, err = server.TNet.Dial("tcp", net.JoinHostPort(host, string(port)))
 		}
 		if err != nil {
-			conn.Close()
 			return nil, nil, err
 		}
 
-		server.ProxyHandshake(conn, nil, host, port)
+		err = server.ProxyHandshake(conn, nil, host, port)
 		if err != nil {
 			conn.Close()
 			return nil, nil, err

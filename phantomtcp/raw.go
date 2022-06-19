@@ -18,12 +18,10 @@ func DevicePrint() {
 }
 
 func connectionMonitor(device string, ipv6 bool) {
-	fmt.Printf("Device: %v\n", device)
-
 	var err error
 	localaddr, err := GetLocalAddr(device, ipv6)
 	if err != nil {
-		logPrintln(1, err)
+		logPrintln(1, device, err)
 		return
 	}
 
@@ -41,6 +39,8 @@ func connectionMonitor(device string, ipv6 bool) {
 		}
 		handle, err = net.ListenIP("ip4:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
 	}
+
+	fmt.Printf("Device: %v (%s)\n", device, localaddr.IP.String())
 
 	if err != nil {
 		fmt.Printf("sockraw open failed: %v", err)
