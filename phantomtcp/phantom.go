@@ -744,9 +744,10 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 				continue
 			}
 			InterfaceMap[config.Name] = PhantomInterface{
-				DNS:  config.DNS,
-				Hint: Hint,
-				TNet: tnet,
+				DNS:      config.DNS,
+				Hint:     Hint,
+				Protocol: WIREGUARD,
+				TNet:     tnet,
 			}
 		} else {
 			var protocol byte

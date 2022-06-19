@@ -85,9 +85,9 @@ Usage of ./phantomsocks:
 ```
 ### Socks:
 ```
-Windows(windivert):
+Windows:
 config.json:
-    "proxy" :"socks://127.0.0.1:1080/?dns=127.0.0.1"
+    "proxy" :"socks://127.0.0.1:1080/?dns=127.0.0.1",
     "services": [
         {
             "name": "DNS",
@@ -134,7 +134,7 @@ config.json:
 Windows(windivert):
 config.json:
     "vaddrprefix": 6,
-    "proxy": "redirect://0.0.0.0:6"
+    "proxy": "redirect://0.0.0.0:6",
     "services": [
         {
             "name": "Redirect",
@@ -146,9 +146,9 @@ config.json:
 
 ### Rules
 ```
-  [default]         #domains below will use the config of this interface
-  domain=ip,ip,...  #this domain will use these IPs
-  domain            #this domain will be resolved by DNS
+  [default]         #domains below will use the config of this interface
+  domain=ip,ip,...  #this domain will use these IPs
+  domain            #this domain will be resolved by DNS
   domain=[domain]   #this domain will use the config of this domain
   domain=domain     #this domain will use the addresses of this domain
   

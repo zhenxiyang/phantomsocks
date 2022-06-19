@@ -606,6 +606,8 @@ func (records DNSRecords) BuildResponse(request []byte, qtype int, ttl uint32) [
 			length += 2
 			binary.BigEndian.PutUint16(response[6:], 1)
 		case 28:
+			return response[:length]
+
 			answer := []byte{0xC0, 0x0C, 0x00, 28,
 				0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10,
 				0x00, 0x64, 0xff, VirtualAddrPrefix, 0x00, 0x00, 0x00, 0x00,

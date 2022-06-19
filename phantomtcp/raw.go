@@ -28,13 +28,13 @@ func connectionMonitor(device string, ipv6 bool) {
 	var handle *net.IPConn
 	if ipv6 {
 		if localaddr == nil {
-			logPrintln(1, "no IPv6 on", device)
+			logPrintln(1, "Device:", device, "no IPv6")
 			return
 		}
 		handle, err = net.ListenIP("ip6:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
 	} else {
 		if localaddr == nil {
-			logPrintln(1, "no IPv4 on", device)
+			logPrintln(1, "Device:", device, "no IPv4")
 			return
 		}
 		handle, err = net.ListenIP("ip4:tcp", &net.IPAddr{IP: localaddr.IP, Zone: ""})
