@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -702,27 +701,4 @@ func relay(left, right net.Conn) (int64, int64, error) {
 		err = rs.Err
 	}
 	return n, rs.N, err
-}
-
-func ListenTcpAndServe(listenAddr string, serve func(client net.Conn, dstAddr *net.TCPAddr)) {
-	l, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	for {
-		client, err := l.Accept()
-		if err != nil {
-			log.Panic(err)
-		}
-
-		dstAddr, err := GetOriginalDST(client.(*net.TCPConn))
-		if err != nil {
-			logPrintln(1, err)
-			client.Close()
-			return
-		}
-
-		go serve(client, dstAddr)
-	}
 }

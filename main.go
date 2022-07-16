@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	ptcp "github.com/macronut/phantomsocks/phantomtcp"
-	"github.com/macronut/phantomsocks/proxy"
+	proxy "github.com/macronut/phantomsocks/proxy"
 )
 
 var LogLevel int = 0
@@ -21,26 +21,44 @@ var MaxProcs int = 1
 var PassiveMode bool = false
 var allowlist map[string]bool = nil
 
-func Serve(serve func(net.Conn, *net.TCPAddr)) func(net.Conn, *net.TCPAddr) {
-	return func(client net.Conn, dstAddr *net.TCPAddr) {
-		err := proxy.SetKeepAlive(client)
-		if err != nil {
-			log.Panic(err)
-		}
+func ListenAndServe(listenAddr string, serve func(net.Conn)) {
+	l, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Panic(err)
+	}
 
-		if allowlist != nil {
+	if allowlist != nil {
+		for {
+			client, err := l.Accept()
+			if err != nil {
+				log.Panic(err)
+			}
+			err = proxy.SetKeepAlive(client)
+			if err != nil {
+				log.Panic(err)
+			}
 
-			srcAddr := client.RemoteAddr()
-			srcTcpAddr, _ := net.ResolveTCPAddr(srcAddr.Network(), srcAddr.String())
-
-			_, ok := allowlist[srcTcpAddr.IP.String()]
+			remoteAddr := client.RemoteAddr()
+			remoteTCPAddr, _ := net.ResolveTCPAddr(remoteAddr.Network(), remoteAddr.String())
+			_, ok := allowlist[remoteTCPAddr.IP.String()]
 			if ok {
-				serve(client, dstAddr)
+				go serve(client)
 			} else {
 				client.Close()
 			}
-		} else {
-			serve(client, dstAddr)
+		}
+	} else {
+		for {
+			client, err := l.Accept()
+			if err != nil {
+				log.Panic(err)
+			}
+			err = proxy.SetKeepAlive(client)
+			if err != nil {
+				log.Panic(err)
+			}
+
+			go serve(client)
 		}
 	}
 }
@@ -173,17 +191,14 @@ func StartService() {
 			go DNSServer(service.Address)
 		case "socks":
 			fmt.Println("Socks:", service.Address)
-			go ptcp.ListenTcpAndServe(service.Address, Serve(ptcp.SocksProxy))
+			go ListenAndServe(service.Address, ptcp.SocksProxy)
 			go ptcp.SocksUDPProxy(service.Address)
 			default_socks = service.Address
-		case "tcp":
-			fmt.Println("TCP:", service.Address)
-			go ptcp.ListenTcpAndServe(service.Address, Serve(ptcp.TCPProxy))
-		case "tcp_tproxy":
-			fmt.Println("TCP(TProxy):", service.Address)
-			go ptcp.ListenTcpTProxyAndServe(service.Address, Serve(ptcp.TCPProxy))
-		case "udp":
-			fmt.Println("UDP:", service.Address)
+		case "redirect":
+			fmt.Println("Redirect:", service.Address)
+			go ListenAndServe(service.Address, ptcp.RedirectProxy)
+		case "tproxy":
+			fmt.Println("TProxy:", service.Address)
 			go ptcp.TProxyUDP(service.Address)
 		case "wireguard":
 			fmt.Println("WireGuard:", service.Address)
@@ -192,13 +207,9 @@ func StartService() {
 			if default_socks != "" {
 				go PACServer(service.Address, default_socks)
 			}
-		case "sni":
+		case "sniproxy":
 			fmt.Println("SNI:", service.Address)
-			go ptcp.ListenTcpAndServe(service.Address, Serve(ptcp.SNIProxy))
-			go ptcp.QUICProxy(service.Address)
-		case "sni_tproxy":
-			fmt.Println("SNI(TProxy):", service.Address)
-			go ptcp.ListenTcpTProxyAndServe(service.Address, Serve(ptcp.SNIProxy))
+			go ListenAndServe(service.Address, ptcp.SNIProxy)
 			go ptcp.QUICProxy(service.Address)
 		}
 	}

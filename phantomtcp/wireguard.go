@@ -46,7 +46,7 @@ func WireGuardServer(service ServiceConfig) {
 			}
 			switch addr := client.LocalAddr().(type) {
 			case *net.TCPAddr:
-				go TCPProxy(client, &net.TCPAddr{IP: addr.IP.To4(), Port: addr.Port})
+				go redirect(client, &net.TCPAddr{IP: addr.IP.To4(), Port: addr.Port})
 			}
 		}
 	}

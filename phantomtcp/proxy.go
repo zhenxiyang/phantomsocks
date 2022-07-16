@@ -16,7 +16,7 @@ func ReadAtLeast() {
 
 }
 
-func SocksProxy(client net.Conn, _ *net.TCPAddr) {
+func SocksProxy(client net.Conn) {
 	defer client.Close()
 
 	var conn net.Conn
@@ -289,7 +289,7 @@ func splitHostPort(hostport string) (host string, port int) {
 	return
 }
 
-func SNIProxy(client net.Conn, addr *net.TCPAddr) {
+func SNIProxy(client net.Conn) {
 	defer client.Close()
 
 	var conn net.Conn
@@ -301,27 +301,41 @@ func SNIProxy(client net.Conn, addr *net.TCPAddr) {
 			return
 		}
 
-		var host = addr.IP.String()
-		var port = addr.Port
+		var host string
+		var port int
 		if b[0] == 0x16 {
 			offset, length := GetSNI(b[:n])
-			if length != 0 {
-				host = string(b[offset : offset+length])
+			if length == 0 {
+				return
 			}
+			host = string(b[offset : offset+length])
+			port = 443
 		} else {
 			offset, length := GetHost(b[:n])
-			if length != 0 {
-				host = string(b[offset : offset+length])
-				portStart := strings.Index(host, ":")
-				if portStart != -1 {
-					host = host[:portStart]
+			if length == 0 {
+				return
+			}
+			host = string(b[offset : offset+length])
+			portstart := strings.Index(host, ":")
+			if portstart == -1 {
+				port = 80
+			} else {
+				port, err = strconv.Atoi(host[portstart+1:])
+				if err != nil {
+					return
 				}
+				host = host[:portstart]
+			}
+			if net.ParseIP(host) != nil {
+				return
 			}
 		}
 
 		server := ConfigLookup(host)
-
-		if server != nil && (server.Protocol != 0 || server.Hint != 0) {
+		if server == nil {
+			return
+		}
+		if server.Hint != 0 {
 			logPrintln(1, "SNI:", host, port, server)
 
 			if b[0] == 0x16 {
@@ -373,7 +387,7 @@ func SNIProxy(client net.Conn, addr *net.TCPAddr) {
 			}
 		} else {
 			host = net.JoinHostPort(host, strconv.Itoa(port))
-			logPrintln(1, "SNIProxy:", host)
+			logPrintln(1, host)
 
 			conn, err = net.Dial("tcp", host)
 			if err != nil {
@@ -399,7 +413,18 @@ func SNIProxy(client net.Conn, addr *net.TCPAddr) {
 	}
 }
 
-func TCPProxy(client net.Conn, addr *net.TCPAddr) {
+func RedirectProxy(client net.Conn) {
+	addr, err := GetOriginalDST(client.(*net.TCPConn))
+	if err != nil {
+		logPrintln(1, err)
+		client.Close()
+		return
+	}
+
+	redirect(client, addr)
+}
+
+func redirect(client net.Conn, addr *net.TCPAddr) {
 	defer client.Close()
 
 	var conn net.Conn
@@ -452,7 +477,7 @@ func TCPProxy(client net.Conn, addr *net.TCPAddr) {
 					server = ConfigLookup(host)
 				}
 
-				logPrintln(1, "TCP:", client.RemoteAddr(), "->", host, port, server)
+				logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
 				if server == nil {
 					return
 				}
@@ -463,7 +488,7 @@ func TCPProxy(client net.Conn, addr *net.TCPAddr) {
 					return
 				}
 			} else {
-				logPrintln(1, "TCP:", client.RemoteAddr(), "->", host, port, server)
+				logPrintln(1, "Redirect:", client.RemoteAddr(), "->", host, port, server)
 				if server.Hint&OPT_HTTP3 != 0 {
 					HttpMove(client, "h3", b[:n])
 					return
@@ -505,7 +530,7 @@ func TCPProxy(client net.Conn, addr *net.TCPAddr) {
 				}
 			}
 		} else if ips != nil {
-			logPrintln(1, "TCPProxy:", client.RemoteAddr(), "->", addr)
+			logPrintln(1, "RedirectProxy:", client.RemoteAddr(), "->", addr)
 			conn, err = net.DialTCP("tcp", nil, addr)
 			if err != nil {
 				logPrintln(1, host, err)

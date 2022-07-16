@@ -1,12 +1,9 @@
 package phantomtcp
 
 import (
-	"log"
 	"net"
 	"syscall"
 	"time"
-
-	"github.com/macronut/go-tproxy"
 )
 
 func DialConnInfo(laddr, raddr *net.TCPAddr, server *PhantomInterface, payload []byte) (net.Conn, *ConnectionInfo, error) {
@@ -196,26 +193,4 @@ func SendWithOption(conn net.Conn, payload []byte, tos int, ttl int) error {
 	}
 
 	return nil
-}
-
-func ListenTcpTProxyAndServe(listenAddr string, serve func(client net.Conn, dstAddr *net.TCPAddr)) {
-	listenTCPAddr, _ := net.ResolveTCPAddr("tcp", listenAddr)
-	l, err := tproxy.ListenTCP("tcp", listenTCPAddr)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	for {
-		client, err := l.Accept()
-		if err != nil {
-			log.Panic(err)
-		}
-
-		tcpConn := client.(*tproxy.Conn).TCPConn
-
-		dstAddr := tcpConn.LocalAddr()
-		dstTCPAddr, err := net.ResolveTCPAddr(dstAddr.Network(), dstAddr.String())
-
-		go serve(tcpConn, dstTCPAddr)
-	}
 }

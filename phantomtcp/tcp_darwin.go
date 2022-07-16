@@ -58,6 +58,3 @@ func GetOriginalDST(conn *net.TCPConn) (*net.TCPAddr, error) {
 func SendWithOption(conn net.Conn, payload []byte, tos, ttl int) error {
 	return nil
 }
-
-func ListenTcpTProxyAndServe(listenAddr string, serve func(client net.Conn, dstAddr *net.TCPAddr)) {
-}
