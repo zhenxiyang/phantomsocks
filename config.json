@@ -1,7 +1,13 @@
 {
     "config": "default.conf",
-    "socks": "127.0.0.1:1080",
-    "vaddrprefix": 11,
+    "vaddrprefix": 6,
+    "services": [
+        {
+            "name": "Socks",
+            "protocol": "socks",
+            "address": "127.0.0.1:1080"
+        }
+    ],
     "interfaces": [
         {
             "name": "default",
