@@ -594,7 +594,7 @@ func (records DNSRecords) BuildResponse(request []byte, qtype int, ttl uint32) [
 	response[2] = 0x81
 	response[3] = 0x80
 
-	if records.Index > 0 {
+	if records.Index > 0 && VirtualAddrPrefix != 255 {
 		switch qtype {
 		case 1:
 			answer := []byte{0xC0, 0x0C, 0x00, 1,
