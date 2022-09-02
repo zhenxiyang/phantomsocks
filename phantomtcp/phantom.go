@@ -12,8 +12,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"golang.zx2c4.com/wireguard/tun/netstack"
 )
 
 type ServiceConfig struct {
@@ -72,7 +70,6 @@ type PhantomInterface struct {
 
 	Protocol byte
 	Address  string
-	TNet     *netstack.Net
 }
 
 var DomainMap map[string]*PhantomInterface
@@ -738,16 +735,16 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 		}
 
 		if config.Protocol == "wireguard" {
-			tnet, err := WireGuardClient(config)
+			err := WireGuardClient(config)
 			if err != nil {
 				logPrintln(0, config, err)
 				continue
 			}
 			InterfaceMap[config.Name] = PhantomInterface{
+				Device:   config.Name,
 				DNS:      config.DNS,
 				Hint:     Hint,
 				Protocol: WIREGUARD,
-				TNet:     tnet,
 			}
 		} else {
 			var protocol byte
@@ -770,35 +767,23 @@ func CreateInterfaces(Interfaces []InterfaceConfig) []string {
 				protocol = SOCKS5
 			}
 
-			pface, ok := InterfaceMap[config.Device]
-			if ok {
-				if pface.Protocol == WIREGUARD {
-					InterfaceMap[config.Name] = PhantomInterface{
-						DNS:  config.DNS,
-						Hint: Hint,
-
-						Protocol: protocol,
-						Address:  config.Address,
-						TNet:     pface.TNet,
-					}
-				} else {
-					logPrintln(1, "invalid interface: "+config.Device)
-				}
-			} else {
-				InterfaceMap[config.Name] = PhantomInterface{
-					Device: config.Device,
-					DNS:    config.DNS,
-					Hint:   Hint,
-					MTU:    uint16(config.MTU),
-					TTL:    byte(config.TTL),
-					MAXTTL: byte(config.MAXTTL),
-
-					Protocol: protocol,
-					Address:  config.Address,
-				}
-				if config.Device != "" && !contains(devices, config.Device) {
+			_, ok := InterfaceMap[config.Device]
+			if !ok {
+				if config.Device != "" && Hint != 0 && !contains(devices, config.Device) {
 					devices = append(devices, config.Device)
 				}
+			}
+
+			InterfaceMap[config.Name] = PhantomInterface{
+				Device: config.Device,
+				DNS:    config.DNS,
+				Hint:   Hint,
+				MTU:    uint16(config.MTU),
+				TTL:    byte(config.TTL),
+				MAXTTL: byte(config.MAXTTL),
+
+				Protocol: protocol,
+				Address:  config.Address,
 			}
 		}
 	}

@@ -147,28 +147,21 @@ func GetLocalAddr(name string, ipv6 bool) (*net.TCPAddr, error) {
 
 func (server *PhantomInterface) Dial(host string, port int, b []byte) (net.Conn, *ConnectionInfo, error) {
 	raddrs, err := server.GetRemoteAddresses(host, port)
-	if err != nil {
+	if err != nil || raddrs == nil {
 		return nil, nil, err
 	}
 
 	var conn net.Conn
-	if server.TNet != nil {
-		if raddrs != nil {
-			conn, err = server.TNet.DialTCP(raddrs[rand.Intn(len(raddrs))])
-		} else {
-			conn, err = server.TNet.Dial("tcp", net.JoinHostPort(host, string(port)))
-		}
+	if server.Protocol == WIREGUARD {
+		conn, err = WireGuardDialTCP(server.Device, raddrs[rand.Intn(len(raddrs))])
 		if err != nil {
 			return nil, nil, err
 		}
-
-		err = server.ProxyHandshake(conn, nil, host, port)
-		if err != nil {
-			conn.Close()
-			return nil, nil, err
+		
+		if b != nil {
+			_, err = conn.Write(b)
 		}
-
-		_, err = conn.Write(b)
+		
 		return conn, nil, err
 	}
 

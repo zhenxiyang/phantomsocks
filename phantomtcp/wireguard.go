@@ -1,3 +1,5 @@
+// +build wireguard
+
 package phantomtcp
 
 import (
@@ -179,7 +181,9 @@ func WireGuardServer(service ServiceConfig) {
 	}
 }
 
-func WireGuardClient(client InterfaceConfig) (*netstack.Net, error) {
+var TNetMap map[string]*netstack.Net
+
+func WireGuardClient(client InterfaceConfig) error {
 	var addrs []netip.Addr
 	for _, addr := range strings.Split(client.Address, ",") {
 		prefix, err := netip.ParsePrefix(addr)
@@ -190,20 +194,30 @@ func WireGuardClient(client InterfaceConfig) (*netstack.Net, error) {
 		addrs = append(addrs, prefix.Addr())
 	}
 	_, tnet, err := StartWireguard(addrs, 0, nil, int(client.MTU), client.PrivateKey, client.Peers)
-	return tnet, err
+	if err == nil {
+		TNetMap[client.Name] = tnet
+	}
+	return err
+}
+
+func WireGuardDialTCP(device string, address *net.TCPAddr) (net.Conn, error){
+	tnet, ok := TNetMap[device]
+	if ok {
+		return tnet.DialTCP(address)
+	}
+	
+	return nil, nil
+}
+
+func WireGuardDialUDP(device string, address *net.UDPAddr) (net.Conn, error){
+	tnet, ok := TNetMap[device]
+	if ok {
+		return tnet.DialUDP(nil, address)
+	}
+	return nil, nil
 }
 
 func StartWireguard(Addresses []netip.Addr, ListenPort int, DNS []netip.Addr, MTU int, PrivateKey string, Peers []Peer) (tun.Device, *netstack.Net, error) {
-	/*
-		for _, addr := range strings.Split(config.DNS, ",") {
-			prefix, err := netip.ParsePrefix(addr)
-			if err != nil {
-				logPrintln(0, addr, err)
-				continue
-			}
-			DNS = append(DNS, prefix.Addr())
-		}
-	*/
 	tun, tnet, err := netstack.CreateNetTUN(Addresses, DNS, MTU)
 	if err != nil {
 		return nil, nil, err

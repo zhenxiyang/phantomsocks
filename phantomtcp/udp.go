@@ -195,7 +195,7 @@ func (server *PhantomInterface) DialUDP(host string, port int) (net.Conn, net.Co
 		udpConn, err := net.DialUDP("udp", nil, &udpAddr)
 		return udpConn, tcpConn, err
 	case WIREGUARD:
-		udpConn, err := server.TNet.DialUDP(nil, &net.UDPAddr{IP: raddr.IP, Port: raddr.Port})
+		udpConn, err := WireGuardDialUDP(server.Device, &net.UDPAddr{IP: raddr.IP, Port: raddr.Port})
 		return udpConn, nil, err
 	}
 
