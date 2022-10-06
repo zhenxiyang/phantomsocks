@@ -1,4 +1,4 @@
-module github.com/macronut/phantomsocks
+module github.com/zhenxiyang/phantomsocks
 
 go 1.18
 
